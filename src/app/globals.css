@@ -1,26 +1,78 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * playsfa design tokens
+ * テーマ: 温かみのあるオフホワイト / チャコール / コーラルアクセント
+ * チャート系列色は dataviz バリデータ検証済み(2026-07-03, 白面):
+ *   最悪隣接CVD ΔE 12.9 (PASS)。ただし series-3/5/6 (黄/緑/マゼンタ) は
+ *   白面コントラスト3:1未満 → 使うチャートには直接ラベル or テーブル併記が必須。
+ */
+@theme {
+  /* surfaces */
+  --color-canvas: #f2f1ef;
+  --color-surface: #ffffff;
+  --color-sunken: #f6f5f2;
+  --color-night: #171716;
+  --color-night-ink: #f4f3f1;
+
+  /* ink */
+  --color-ink: #1b1b19;
+  --color-ink-secondary: #55534e;
+  --color-ink-muted: #8c8a84;
+  --color-line: #e8e6e1;
+
+  /* accent (coral) */
+  --color-accent: #e2573d;
+  --color-accent-deep: #c64530;
+  --color-accent-100: #fae1da;
+  --color-accent-200: #f4c0b2;
+  --color-accent-300: #ee9c85;
+  --color-accent-soft: #fbeae5;
+
+  /* status (charts/UIとも共用。色単独で意味を伝えず、必ずラベル併記) */
+  --color-good: #0ca30c;
+  --color-good-deep: #0b6b0b;
+  --color-good-soft: #e5f3e5;
+  --color-warn: #fab219;
+  --color-warn-deep: #8a6200;
+  --color-warn-soft: #fdf2d9;
+  --color-serious: #ec835a;
+  --color-serious-deep: #a8502e;
+  --color-serious-soft: #fbe9e0;
+  --color-critical: #d03b3b;
+  --color-critical-deep: #a62f2f;
+  --color-critical-soft: #f9e3e3;
+
+  /* chart categorical slots (順序固定・循環禁止) */
+  --color-series-1: #e2573d;
+  --color-series-2: #2a78d6;
+  --color-series-3: #eda100;
+  --color-series-4: #4a3aa7;
+  --color-series-5: #1baf7a;
+  --color-series-6: #e87ba4;
+
+  /* chart chrome */
+  --color-grid: #e5e3dd;
+  --color-axis: #c6c4be;
+  --color-deemphasis: #d8d6d0;
+  --color-delta-good: #006300;
+
+  /* shape */
+  --radius-card: 1.75rem;
+  --radius-inner: 1.25rem;
+  --radius-field: 1rem;
+
+  /* elevation */
+  --shadow-card: 0 1px 2px rgb(27 27 25 / 0.03), 0 16px 40px -16px rgb(27 27 25 / 0.1);
+  --shadow-pop: 0 24px 48px -12px rgb(27 27 25 / 0.18);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-manrope), var(--font-noto-sans-jp), ui-sans-serif,
+    system-ui, -apple-system, "Hiragino Kaku Gothic ProN", sans-serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
 }
