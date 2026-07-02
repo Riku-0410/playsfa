@@ -1,0 +1,32 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import type { BillingCycle } from "@/lib/billing";
+import { createContractWithInvoices } from "@/lib/contracts";
+import { num, requiredStr, str } from "@/lib/form";
+import { createAdminClient } from "@/lib/supabase/admin";
+
+export async function createContract(formData: FormData) {
+  const db = createAdminClient();
+  const amount = num(formData, "amount_per_billing");
+  if (!amount || amount <= 0) throw new Error("請求額が不正です");
+
+  const { contractId } = await createContractWithInvoices(db, {
+    customer_id: requiredStr(formData, "customer_id"),
+    deal_id: str(formData, "deal_id"),
+    service: requiredStr(formData, "service") as "playcut" | "baskestats",
+    plan_name: str(formData, "plan_name"),
+    billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
+    amount_per_billing: amount,
+    tax_rate: num(formData, "tax_rate") ?? 10,
+    agreement_date: requiredStr(formData, "agreement_date"),
+    billing_start_date: requiredStr(formData, "billing_start_date"),
+    note: str(formData, "note"),
+  });
+
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/");
+  redirect(`/invoices?contract=${contractId}`);
+}

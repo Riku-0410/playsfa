@@ -53,7 +53,7 @@ const sampleInvoices = [
   { no: "INV-2026-017", customer: "FCオリオンズ", service: "playcut", amount: 240000, due: "7/15", status: "overdue" },
   { no: "INV-2026-016", customer: "湘南ミネルヴァ", service: "baskestats", amount: 480000, due: "6/30", status: "paid" },
   { no: "INV-2026-019", customer: "北陵大学", service: "playcut", amount: 360000, due: "9/30", status: "scheduled" },
-];
+] as const;
 
 export default function DesignPage() {
   return (
