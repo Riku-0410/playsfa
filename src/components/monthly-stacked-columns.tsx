@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
+import { formatJPY, formatJPYCompact } from "@/lib/format";
 
 export type MonthlyStackedDatum = {
   key: string; // "2026-07"
@@ -18,7 +19,9 @@ const PAD = { top: 28, right: 8, bottom: 34, left: 36 };
 const PLOT_H = 220;
 
 function niceTicks(max: number): number[] {
-  const step = max <= 4 ? 1 : max <= 8 ? 2 : max <= 20 ? 5 : 10;
+  const pow = 10 ** Math.floor(Math.log10(Math.max(1, max / 4)));
+  const step =
+    [1, 2, 5, 10].map((m) => m * pow).find((s) => max / s <= 5) ?? pow * 10;
   const top = Math.ceil(max / step) * step;
   const ticks = [];
   for (let v = 0; v <= top; v += step) ticks.push(v);
@@ -40,12 +43,20 @@ export function MonthlyStackedColumns({
   data,
   series,
   unit = "件",
+  money = false,
+  title,
 }: {
   data: MonthlyStackedDatum[];
   series: ChartSeries[];
   unit?: string;
+  /** 金額モード: 目盛・キャップは「¥48万」概数、ツールチップは正確な円表示 */
+  money?: boolean;
+  /** チャート全体のaria-label(例「月別成約件数」) */
+  title: string;
 }) {
   const [hover, setHover] = useState<number | null>(null);
+  const fmtFull = (v: number) => (money ? formatJPY(v) : `${v}${unit}`);
+  const fmtShort = (v: number) => (money ? formatJPYCompact(v) : String(v));
 
   const totals = data.map((d) => d.values.reduce((a, b) => a + b, 0));
   const ticks = niceTicks(Math.max(1, ...totals));
@@ -75,7 +86,7 @@ export function MonthlyStackedColumns({
         viewBox={`0 0 ${width} ${height}`}
         className="h-auto w-full"
         role="img"
-        aria-label={`月別トライアル獲得件数(${series.map((s) => s.label).join("・")})`}
+        aria-label={`${title}(${series.map((s) => s.label).join("・")})`}
       >
         {/* グリッド(ヘアライン)と目盛 */}
         {ticks.map((t) => (
@@ -95,7 +106,7 @@ export function MonthlyStackedColumns({
               textAnchor="end"
               className="fill-ink-muted text-[10px] tabular-nums"
             >
-              {t}
+              {fmtShort(t)}
             </text>
           </g>
         ))}
@@ -154,7 +165,7 @@ export function MonthlyStackedColumns({
                   textAnchor="middle"
                   className="fill-ink text-[11px] font-semibold"
                 >
-                  {total}
+                  {fmtShort(total)}
                 </text>
               )}
               <text
@@ -187,8 +198,8 @@ export function MonthlyStackedColumns({
                 fill="transparent"
                 tabIndex={0}
                 aria-label={`${d.key}: ${series
-                  .map((s, si) => `${s.label} ${d.values[si]}${unit}`)
-                  .join("、")}、合計 ${total}${unit}`}
+                  .map((s, si) => `${s.label} ${fmtFull(d.values[si])}`)
+                  .join("、")}、合計 ${fmtFull(total)}`}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
                 onFocus={() => setHover(i)}
@@ -202,9 +213,9 @@ export function MonthlyStackedColumns({
 
       {hover !== null && (
         <div
-          className="pointer-events-none absolute z-20 -translate-x-1/2 rounded-xl border border-line bg-surface px-3.5 py-2.5 shadow-pop"
+          className="pointer-events-none absolute z-20 w-max -translate-x-1/2 rounded-xl border border-line bg-surface px-3.5 py-2.5 shadow-pop"
           style={{
-            left: `${((PAD.left + hover * BAND + BAND / 2) / width) * 100}%`,
+            left: `${Math.min(88, Math.max(12, ((PAD.left + hover * BAND + BAND / 2) / width) * 100))}%`,
             top: 20,
           }}
         >
@@ -212,22 +223,23 @@ export function MonthlyStackedColumns({
             {data[hover].key}
           </p>
           {series.map((s, si) => (
-            <p key={s.key} className="flex items-center gap-2 text-xs">
+            <p
+              key={s.key}
+              className="flex items-center gap-2 text-xs whitespace-nowrap"
+            >
               <span
                 className="h-0.5 w-3 rounded-full"
                 style={{ background: s.color }}
               />
               <strong className="tabular-nums text-ink">
-                {data[hover].values[si]}
-                {unit}
+                {fmtFull(data[hover].values[si])}
               </strong>
               <span className="text-ink-secondary">{s.label}</span>
             </p>
           ))}
           <p className="mt-1 border-t border-line pt-1 text-xs">
             <strong className="tabular-nums text-ink">
-              {totals[hover]}
-              {unit}
+              {fmtFull(totals[hover])}
             </strong>{" "}
             <span className="text-ink-secondary">合計</span>
           </p>
