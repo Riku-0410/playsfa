@@ -1,3 +1,6 @@
+"use client";
+
+import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
 
 const variants = {
@@ -19,16 +22,34 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: keyof typeof sizes;
 };
 
+/**
+ * フォームのaction実行中はsubmitボタンを自動で無効化し、二度押しによる
+ * 二重送信(商談の二重作成・入金の二重登録など)を防ぐ。
+ * useFormStatus は最も近い親<form>の送信状態を見るため、一覧内に並ぶ
+ * 独立したフォームでは押したボタンだけが無効になる。
+ */
+function usePendingDisabled(
+  type: React.ButtonHTMLAttributes<HTMLButtonElement>["type"],
+  disabled: boolean | undefined,
+) {
+  const { pending } = useFormStatus();
+  return disabled || (pending && type === "submit");
+}
+
 export function Button({
   variant = "primary",
   size = "md",
   className,
   type = "button",
+  disabled,
   ...props
 }: ButtonProps) {
+  const isDisabled = usePendingDisabled(type, disabled);
   return (
     <button
       type={type}
+      disabled={isDisabled}
+      aria-busy={isDisabled && !disabled ? true : undefined}
       className={cn(
         "inline-flex items-center justify-center gap-2 rounded-full font-semibold whitespace-nowrap transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
@@ -47,11 +68,15 @@ export function IconButton({
   size = "md",
   className,
   type = "button",
+  disabled,
   ...props
 }: ButtonProps) {
+  const isDisabled = usePendingDisabled(type, disabled);
   return (
     <button
       type={type}
+      disabled={isDisabled}
+      aria-busy={isDisabled && !disabled ? true : undefined}
       className={cn(
         "inline-flex items-center justify-center rounded-full transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
