@@ -12,7 +12,6 @@ type Service = "playcut" | "baskestats";
 function dealValues(formData: FormData) {
   return {
     customer_id: requiredStr(formData, "customer_id"),
-    service: requiredStr(formData, "service") as Service,
     stage: requiredStr(formData, "stage") as Stage,
     title: str(formData, "title"),
     amount_expected: num(formData, "amount_expected"),
@@ -26,16 +25,23 @@ function dealValues(formData: FormData) {
   };
 }
 
+/** サービスは複数選択可。選んだサービスごとに商談を1件ずつ作る */
 export async function createDeal(formData: FormData) {
   const db = createAdminClient();
+  const services = [...new Set(formData.getAll("service").map(String))].filter(
+    (s): s is Service => s === "playcut" || s === "baskestats",
+  );
+  if (services.length === 0) {
+    throw new Error("サービスを1つ以上選択してください");
+  }
+  const values = dealValues(formData);
   const { data, error } = await db
     .from("deals")
-    .insert(dealValues(formData))
-    .select("id")
-    .single();
+    .insert(services.map((service) => ({ ...values, service })))
+    .select("id");
   if (error) throw error;
   revalidatePath("/deals");
-  redirect(`/deals/${data.id}`);
+  redirect(data.length === 1 ? `/deals/${data[0].id}` : "/deals");
 }
 
 export async function deleteDeal(formData: FormData) {
@@ -50,7 +56,10 @@ export async function deleteDeal(formData: FormData) {
 export async function updateDeal(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
-  const values = dealValues(formData);
+  const values = {
+    ...dealValues(formData),
+    service: requiredStr(formData, "service") as Service,
+  };
   const closed =
     values.stage === "won" || values.stage === "lost"
       ? { closed_at: todayJST() }

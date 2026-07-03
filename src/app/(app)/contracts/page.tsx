@@ -3,12 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { formatJPY } from "@/lib/format";
-import { parseListParams } from "@/lib/list-params";
+import { parseListParams, searchQuery } from "@/lib/list-params";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -26,27 +27,40 @@ const SORTS = {
 export default async function ContractsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
-  const raw = await searchParams;
+  const { q: rawQ, ...raw } = await searchParams;
+  const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
     defaultSort: "billing_start",
   });
   const db = createAdminClient();
-  const { data: contracts, count } = await db
+  let query = db
     .from("contracts")
     .select(
-      "id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status, customers(id, name)",
+      "id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status, customers!inner(id, name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
+  if (q) query = query.ilike("customers.name", `%${q}%`);
+  const { data: contracts, count } = await query;
   const total = count ?? 0;
 
-  const keptParams = { sort: raw.sort, dir: raw.dir };
-  const sortProps = { basePath: "/contracts", sort: sortKey, dir };
+  const keptParams = { q: q ?? undefined, sort: raw.sort, dir: raw.dir };
+  const sortProps = {
+    basePath: "/contracts",
+    params: { q: q ?? undefined },
+    sort: sortKey,
+    dir,
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -59,17 +73,32 @@ export default async function ContractsPage({
           </Link>
         }
       />
+      <div className="flex justify-end">
+        <ListSearch
+          basePath="/contracts"
+          q={rawQ}
+          placeholder="顧客名で検索…"
+          params={{ sort: raw.sort, dir: raw.dir }}
+        />
+      </div>
       <Card>
         {!contracts?.length ? (
-          <EmptyState
-            title="契約がまだありません"
-            description="契約を登録すると請求書が自動でスケジュールされます"
-            action={
-              <Link href="/contracts/new">
-                <Button size="sm">契約を登録 →</Button>
-              </Link>
-            }
-          />
+          q ? (
+            <EmptyState
+              title={`「${q}」に一致する契約がありません`}
+              description="検索語を変えてみてください"
+            />
+          ) : (
+            <EmptyState
+              title="契約がまだありません"
+              description="契約を登録すると請求書が自動でスケジュールされます"
+              action={
+                <Link href="/contracts/new">
+                  <Button size="sm">契約を登録 →</Button>
+                </Link>
+              }
+            />
+          )
         ) : (
           <CardBody className="px-2 pt-2">
             <Table>

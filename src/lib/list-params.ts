@@ -47,6 +47,19 @@ export function parseListParams(
   };
 }
 
+/**
+ * 検索語を ilike / or() に安全に渡せる形に整える。
+ * ワイルドカード(% _)とPostgRESTのor構文を壊す文字は除去。
+ */
+export function searchQuery(raw?: string): string | null {
+  const s = (raw ?? "")
+    .trim()
+    .slice(0, 100)
+    .replace(/[,()%_\\]/g, "")
+    .trim();
+  return s || null;
+}
+
 /** 空値を除いてクエリ文字列を組み立てる。page=1 は省略してURLを綺麗に保つ */
 export function listHref(
   basePath: string,

@@ -3,13 +3,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
-import { listHref, parseListParams } from "@/lib/list-params";
+import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -29,12 +30,14 @@ export default async function DealsPage({
 }: {
   searchParams: Promise<{
     stage?: string;
+    q?: string;
     page?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
-  const { stage, ...raw } = await searchParams;
+  const { stage, q: rawQ, ...raw } = await searchParams;
+  const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
     defaultSort: "created",
@@ -44,7 +47,7 @@ export default async function DealsPage({
   let query = db
     .from("deals")
     .select(
-      "id, service, stage, title, amount_expected, trial_end, competitor, competitor_expiry, customers(id, name)",
+      "id, service, stage, title, amount_expected, trial_end, competitor, competitor_expiry, customers!inner(id, name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -53,13 +56,14 @@ export default async function DealsPage({
   if (stage && stage in DEAL_STAGES) {
     query = query.eq("stage", stage as keyof typeof DEAL_STAGES);
   }
+  if (q) query = query.ilike("customers.name", `%${q}%`);
   const { data: deals, count } = await query;
   const total = count ?? 0;
 
-  const keptParams = { stage, sort: raw.sort, dir: raw.dir };
+  const keptParams = { stage, q: q ?? undefined, sort: raw.sort, dir: raw.dir };
   const sortProps = {
     basePath: "/deals",
-    params: { stage },
+    params: { stage, q: q ?? undefined },
     sort: sortKey,
     dir,
   };
@@ -76,45 +80,65 @@ export default async function DealsPage({
         }
       />
 
-      <div className="flex flex-wrap gap-2">
-        <Link
-          href={listHref("/deals", { sort: raw.sort, dir: raw.dir })}
-          className={cn(
-            "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
-            !stage
-              ? "bg-night text-night-ink"
-              : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
-          )}
-        >
-          すべて
-        </Link>
-        {Object.entries(DEAL_STAGES).map(([k, v]) => (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
-            key={k}
-            href={listHref("/deals", { stage: k, sort: raw.sort, dir: raw.dir })}
+            href={listHref("/deals", { q: q ?? undefined, sort: raw.sort, dir: raw.dir })}
             className={cn(
               "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
-              stage === k
+              !stage
                 ? "bg-night text-night-ink"
                 : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
             )}
           >
-            {v.label}
+            すべて
           </Link>
-        ))}
+          {Object.entries(DEAL_STAGES).map(([k, v]) => (
+            <Link
+              key={k}
+              href={listHref("/deals", {
+                stage: k,
+                q: q ?? undefined,
+                sort: raw.sort,
+                dir: raw.dir,
+              })}
+              className={cn(
+                "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
+                stage === k
+                  ? "bg-night text-night-ink"
+                  : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
+              )}
+            >
+              {v.label}
+            </Link>
+          ))}
+        </div>
+        <ListSearch
+          basePath="/deals"
+          q={rawQ}
+          placeholder="顧客名で検索…"
+          params={{ stage, sort: raw.sort, dir: raw.dir }}
+        />
       </div>
 
       <Card>
         {!deals?.length ? (
-          <EmptyState
-            title="商談がありません"
-            description="最初の商談を追加してパイプラインを始めましょう"
-            action={
-              <Link href="/deals/new">
-                <Button size="sm">商談を追加 →</Button>
-              </Link>
-            }
-          />
+          q ? (
+            <EmptyState
+              title={`「${q}」に一致する商談がありません`}
+              description="検索語を変えるか、フィルタを解除してみてください"
+            />
+          ) : (
+            <EmptyState
+              title="商談がありません"
+              description="最初の商談を追加してパイプラインを始めましょう"
+              action={
+                <Link href="/deals/new">
+                  <Button size="sm">商談を追加 →</Button>
+                </Link>
+              }
+            />
+          )
         ) : (
           <CardBody className="px-2 pt-2">
             <Table>

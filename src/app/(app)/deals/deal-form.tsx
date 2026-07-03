@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { CheckboxPill } from "@/components/ui/checkbox-pill";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
@@ -48,19 +49,38 @@ export function DealForm({
             ))}
           </Select>
         </Field>
-        <Field>
-          <Label htmlFor="deal-service">サービス *</Label>
-          <Select
-            id="deal-service"
-            name="service"
-            required
-            defaultValue={deal?.service ?? "baskestats"}
-          >
-            {Object.entries(SERVICES).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </Select>
-        </Field>
+        {deal?.id ? (
+          <Field>
+            <Label htmlFor="deal-service">サービス *</Label>
+            <Select
+              id="deal-service"
+              name="service"
+              required
+              defaultValue={deal?.service ?? "baskestats"}
+            >
+              {Object.entries(SERVICES).map(([k, v]) => (
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </Select>
+          </Field>
+        ) : (
+          <Field>
+            <Label>サービス *</Label>
+            <div className="flex flex-wrap gap-2 pt-0.5">
+              {Object.entries(SERVICES).map(([k, v]) => (
+                <CheckboxPill
+                  key={k}
+                  name="service"
+                  value={k}
+                  defaultChecked={(deal?.service ?? "baskestats") === k}
+                >
+                  {v.label}
+                </CheckboxPill>
+              ))}
+            </div>
+            <FieldHint>複数選ぶとサービスごとに商談を作成します</FieldHint>
+          </Field>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-4">
         <Field>

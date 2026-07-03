@@ -2,11 +2,13 @@ import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button, IconButton } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
+import { CheckboxPill } from "@/components/ui/checkbox-pill";
 import { Chip } from "@/components/ui/chip";
 import { DotProgress } from "@/components/ui/dot-progress";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, FieldError, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
@@ -239,6 +241,22 @@ export default function DesignPage() {
               <Label htmlFor="ds-customer">顧客</Label>
               <Input id="ds-customer" placeholder="例: 青葉学園高校" />
             </Field>
+            <Field>
+              <Label>サービス(CheckboxPill・複数選択)</Label>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                {Object.entries(SERVICES).map(([k, v]) => (
+                  <CheckboxPill
+                    key={k}
+                    name="ds-service"
+                    value={k}
+                    defaultChecked={k === "baskestats"}
+                  >
+                    {v.label}
+                  </CheckboxPill>
+                ))}
+              </div>
+              <FieldHint>同じ name で複数置き、getAll で受ける</FieldHint>
+            </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field>
                 <Label htmlFor="ds-cycle">支払いサイクル</Label>
@@ -271,6 +289,10 @@ export default function DesignPage() {
       </Section>
 
       <Section title="テーブル(請求書一覧)">
+        {/* ListSearch: GETフォームの検索ボックス。フィルタ・ソートはhiddenで保持 */}
+        <div className="flex justify-end">
+          <ListSearch basePath="/design" placeholder="顧客名で検索…" />
+        </div>
         <Card>
           <CardHeader>
             <CardTitle>今月の請求</CardTitle>

@@ -3,12 +3,13 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { formatDate } from "@/lib/format";
-import { parseListParams } from "@/lib/list-params";
+import { parseListParams, searchQuery } from "@/lib/list-params";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -22,15 +23,21 @@ const SORTS = {
 export default async function CustomersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    page?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
-  const raw = await searchParams;
+  const { q: rawQ, ...raw } = await searchParams;
+  const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
     defaultSort: "created",
   });
   const db = createAdminClient();
-  const { data: customers, count } = await db
+  let query = db
     .from("customers")
     .select("id, name, org_type, contact_name, contact_email, created_at", {
       count: "exact",
@@ -38,10 +45,21 @@ export default async function CustomersPage({
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
+  if (q) {
+    query = query.or(
+      `name.ilike.%${q}%,name_kana.ilike.%${q}%,contact_name.ilike.%${q}%`,
+    );
+  }
+  const { data: customers, count } = await query;
   const total = count ?? 0;
 
-  const keptParams = { sort: raw.sort, dir: raw.dir };
-  const sortProps = { basePath: "/customers", sort: sortKey, dir };
+  const keptParams = { q: q ?? undefined, sort: raw.sort, dir: raw.dir };
+  const sortProps = {
+    basePath: "/customers",
+    params: { q: q ?? undefined },
+    sort: sortKey,
+    dir,
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -54,17 +72,32 @@ export default async function CustomersPage({
           </Link>
         }
       />
+      <div className="flex justify-end">
+        <ListSearch
+          basePath="/customers"
+          q={rawQ}
+          placeholder="名前・かな・担当者で検索…"
+          params={{ sort: raw.sort, dir: raw.dir }}
+        />
+      </div>
       <Card>
         {!customers?.length ? (
-          <EmptyState
-            title="顧客がまだありません"
-            description="最初の顧客を登録しましょう"
-            action={
-              <Link href="/customers/new">
-                <Button size="sm">顧客を追加 →</Button>
-              </Link>
-            }
-          />
+          q ? (
+            <EmptyState
+              title={`「${q}」に一致する顧客がありません`}
+              description="検索語を変えてみてください"
+            />
+          ) : (
+            <EmptyState
+              title="顧客がまだありません"
+              description="最初の顧客を登録しましょう"
+              action={
+                <Link href="/customers/new">
+                  <Button size="sm">顧客を追加 →</Button>
+                </Link>
+              }
+            />
+          )
         ) : (
           <CardBody className="px-2 pt-2">
             <Table>

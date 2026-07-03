@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
-import { listHref, parseListParams } from "@/lib/list-params";
+import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -49,12 +50,14 @@ export default async function InvoicesPage({
   searchParams: Promise<{
     status?: string;
     contract?: string;
+    q?: string;
     page?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
-  const { status, contract, ...raw } = await searchParams;
+  const { status, contract, q: rawQ, ...raw } = await searchParams;
+  const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
     defaultSort: "issue",
@@ -66,7 +69,7 @@ export default async function InvoicesPage({
   let query = db
     .from("invoices")
     .select(
-      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers(id, name), contracts(service)",
+      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers!inner(id, name), contracts(service)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -78,13 +81,20 @@ export default async function InvoicesPage({
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
   if (contract) query = query.eq("contract_id", contract);
+  if (q) query = query.ilike("customers.name", `%${q}%`);
   const { data: invoices, count } = await query;
   const total = count ?? 0;
 
-  const keptParams = { status, contract, sort: raw.sort, dir: raw.dir };
+  const keptParams = {
+    status,
+    contract,
+    q: q ?? undefined,
+    sort: raw.sort,
+    dir: raw.dir,
+  };
   const sortProps = {
     basePath: "/invoices",
-    params: { status, contract },
+    params: { status, contract, q: q ?? undefined },
     sort: sortKey,
     dir,
   };
@@ -107,9 +117,15 @@ export default async function InvoicesPage({
         }
       />
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
         <Link
-          href={listHref("/invoices", { contract, sort: raw.sort, dir: raw.dir })}
+          href={listHref("/invoices", {
+            contract,
+            q: q ?? undefined,
+            sort: raw.sort,
+            dir: raw.dir,
+          })}
           className={cn(
             "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
             !status
@@ -125,6 +141,7 @@ export default async function InvoicesPage({
             href={listHref("/invoices", {
               status: k,
               contract,
+              q: q ?? undefined,
               sort: raw.sort,
               dir: raw.dir,
             })}
@@ -138,19 +155,33 @@ export default async function InvoicesPage({
             {label}
           </Link>
         ))}
+        </div>
+        <ListSearch
+          basePath="/invoices"
+          q={rawQ}
+          placeholder="顧客名で検索…"
+          params={{ status, contract, sort: raw.sort, dir: raw.dir }}
+        />
       </div>
 
       <Card>
         {!invoices?.length ? (
-          <EmptyState
-            title="請求書がありません"
-            description="契約を登録すると請求書が自動でスケジュールされます"
-            action={
-              <Link href="/contracts/new">
-                <Button size="sm">契約を登録 →</Button>
-              </Link>
-            }
-          />
+          q ? (
+            <EmptyState
+              title={`「${q}」に一致する請求書がありません`}
+              description="検索語を変えるか、フィルタを解除してみてください"
+            />
+          ) : (
+            <EmptyState
+              title="請求書がありません"
+              description="契約を登録すると請求書が自動でスケジュールされます"
+              action={
+                <Link href="/contracts/new">
+                  <Button size="sm">契約を登録 →</Button>
+                </Link>
+              }
+            />
+          )
         ) : (
           <CardBody className="px-2 pt-2">
             <Table>
