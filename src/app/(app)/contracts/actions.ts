@@ -7,6 +7,19 @@ import { createContractWithInvoices } from "@/lib/contracts";
 import { num, requiredStr, str } from "@/lib/form";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+function parseFees(formData: FormData) {
+  const descriptions = formData.getAll("fee_description").map(String);
+  const amounts = formData.getAll("fee_amount").map(String);
+  const types = formData.getAll("fee_type").map(String);
+  return descriptions
+    .map((description, i) => ({
+      description: description.trim(),
+      amount: Number((amounts[i] ?? "").replace(/[,，]/g, "")),
+      recurring: types[i] === "recurring",
+    }))
+    .filter((f) => f.description && Number.isFinite(f.amount) && f.amount > 0);
+}
+
 export async function createContract(formData: FormData) {
   const db = createAdminClient();
   const amount = num(formData, "amount_per_billing");
@@ -23,6 +36,7 @@ export async function createContract(formData: FormData) {
     agreement_date: requiredStr(formData, "agreement_date"),
     billing_start_date: requiredStr(formData, "billing_start_date"),
     note: str(formData, "note"),
+    fees: parseFees(formData),
   });
 
   revalidatePath("/contracts");

@@ -123,6 +123,41 @@ export type Database = {
         }
         Relationships: []
       }
+      contract_fees: {
+        Row: {
+          amount: number
+          contract_id: string
+          created_at: string
+          description: string
+          id: string
+          recurring: boolean
+        }
+        Insert: {
+          amount: number
+          contract_id: string
+          created_at?: string
+          description: string
+          id?: string
+          recurring?: boolean
+        }
+        Update: {
+          amount?: number
+          contract_id?: string
+          created_at?: string
+          description?: string
+          id?: string
+          recurring?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_fees_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contracts: {
         Row: {
           agreement_date: string
@@ -304,6 +339,41 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_items: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          id: string
+          invoice_id: string
+          sort_order: number
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description: string
+          id?: string
+          invoice_id: string
+          sort_order?: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          id?: string
+          invoice_id?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
         ]

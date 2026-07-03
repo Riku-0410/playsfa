@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createContract } from "../actions";
+import { FeeRows } from "../fee-rows";
 
 export const dynamic = "force-dynamic";
 
@@ -146,6 +147,9 @@ export default async function NewContractPage({
                   defaultValue="10"
                 />
               </Field>
+            </div>
+            <div className="border-t border-line pt-4">
+              <FeeRows />
             </div>
             <Field>
               <Label htmlFor="ct-note">メモ</Label>
