@@ -11,6 +11,7 @@ import { Input, Select, Textarea } from "@/components/ui/input";
 import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
+import { SearchSelect } from "@/components/ui/search-select";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
@@ -238,8 +239,19 @@ export default function DesignPage() {
           </CardHeader>
           <CardBody className="space-y-4">
             <Field>
-              <Label htmlFor="ds-customer">顧客</Label>
-              <Input id="ds-customer" placeholder="例: 青葉学園高校" />
+              <Label htmlFor="ds-customer">顧客(SearchSelect・検索ポップアップ)</Label>
+              <SearchSelect
+                id="ds-customer"
+                name="ds-customer-id"
+                options={[
+                  { value: "1", label: "青葉学園高校 男子" },
+                  { value: "2", label: "青葉学園高校 女子" },
+                  { value: "3", label: "FCオリオンズ" },
+                  { value: "4", label: "湘南ミネルヴァ" },
+                  { value: "5", label: "北陵大学 男子" },
+                ]}
+              />
+              <FieldHint>選択肢が多いセレクトはこれを使う(名前で絞り込み)</FieldHint>
             </Field>
             <Field>
               <Label>サービス(CheckboxPill・複数選択)</Label>

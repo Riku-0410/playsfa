@@ -3,6 +3,7 @@ import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/u
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { SearchSelect } from "@/components/ui/search-select";
 import { todayJST } from "@/lib/dates";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -59,17 +60,13 @@ export default async function NewContractPage({
             <div className="grid grid-cols-2 gap-4">
               <Field>
                 <Label htmlFor="ct-customer">顧客 *</Label>
-                <Select
+                <SearchSelect
                   id="ct-customer"
                   name="customer_id"
                   required
-                  defaultValue={deal?.customer_id ?? customerId ?? ""}
-                >
-                  <option value="" disabled>選択してください</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </Select>
+                  defaultValue={deal?.customer_id ?? customerId}
+                  options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                />
               </Field>
               <Field>
                 <Label htmlFor="ct-service">サービス *</Label>

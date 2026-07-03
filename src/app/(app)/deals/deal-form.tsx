@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { CheckboxPill } from "@/components/ui/checkbox-pill";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { SearchSelect } from "@/components/ui/search-select";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 
 type DealDefaults = {
@@ -37,17 +38,13 @@ export function DealForm({
       <div className="grid grid-cols-2 gap-4">
         <Field>
           <Label htmlFor="deal-customer">顧客 *</Label>
-          <Select
+          <SearchSelect
             id="deal-customer"
             name="customer_id"
             required
-            defaultValue={deal?.customer_id ?? ""}
-          >
-            <option value="" disabled>選択してください</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </Select>
+            defaultValue={deal?.customer_id}
+            options={customers.map((c) => ({ value: c.id, label: c.name }))}
+          />
         </Field>
         {deal?.id ? (
           <Field>
