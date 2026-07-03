@@ -4,6 +4,15 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Supabase環境
+
+- **dev** `playsfa-dev` (ref: `wvscqyeirzgqqpimvodh`) — ローカル開発用。`.env.local` はこちらを向いている。CLIのlink先もこちら
+- **prod** `playsfa` (ref: `scbcjpckvcbehvxyokdi`) — 本番。Vercelの環境変数がこちらを向いている。**実データが入っているのでローカルから触らない**(スモークテスト・シード投入は必ずdevで)
+- マイグレーション適用:
+  - dev: `supabase db push`(link済み。パスワードは `.env.local` 内のコメント参照)
+  - prod: `supabase link --project-ref scbcjpckvcbehvxyokdi -p <prodパスワード> && supabase db push` のあと **必ずdevにlinkを戻す**
+- 型生成: `supabase gen types typescript --linked > src/lib/database.types.ts`(devから)
+
 # デザインシステム
 
 - トークンは `src/app/globals.css` の `@theme`(Tailwind v4)。色は必ずトークン経由で使う(生hex禁止)
