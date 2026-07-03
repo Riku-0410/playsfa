@@ -38,7 +38,7 @@ export default async function InvoicesPage({
     )
     .order("issue_date");
   if (status === "unpaid") {
-    query = query.in("status", ["issued", "sent"]);
+    query = query.in("status", ["issued", "sent", "overdue"]);
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
@@ -185,7 +185,7 @@ export default async function InvoicesPage({
                               </Button>
                             </form>
                           )}
-                          {["issued", "sent"].includes(inv.status) && (
+                          {["issued", "sent", "overdue"].includes(inv.status) && (
                             <form action={registerPayment}>
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="outline" type="submit">
@@ -193,6 +193,9 @@ export default async function InvoicesPage({
                               </Button>
                             </form>
                           )}
+                          <Link href={`/invoices/${inv.id}/print`}>
+                            <Button size="sm" variant="ghost">表示</Button>
+                          </Link>
                         </div>
                       </TD>
                     </TR>

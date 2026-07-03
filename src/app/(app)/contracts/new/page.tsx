@@ -1,9 +1,9 @@
-import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { todayJST } from "@/lib/dates";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createContract } from "../actions";
@@ -31,7 +31,7 @@ export default async function NewContractPage({
   ]);
   const customers = customersRes.data ?? [];
   const deal = dealRes.data;
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = todayJST();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">

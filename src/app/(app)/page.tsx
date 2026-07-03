@@ -1,4 +1,3 @@
-import { addDays, format, startOfMonth, endOfMonth } from "date-fns";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +6,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
+import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -15,11 +15,10 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const db = createAdminClient();
-  const now = new Date();
-  const today = format(now, "yyyy-MM-dd");
-  const monthStart = format(startOfMonth(now), "yyyy-MM-dd");
-  const monthEnd = format(endOfMonth(now), "yyyy-MM-dd");
-  const soon = format(addDays(now, 14), "yyyy-MM-dd");
+  const today = todayJST();
+  const { start: monthStart, end: monthEnd } = monthBoundsJST();
+  const soon = addDaysJST(14);
+  const [ty, tm, td] = today.split("-").map(Number);
 
   const [monthInvoices, unpaid, toIssue, trials, activeContracts] =
     await Promise.all([
@@ -32,7 +31,7 @@ export default async function DashboardPage() {
       db
         .from("invoices")
         .select("id, total, due_date, invoice_number, status, customers(name)")
-        .in("status", ["issued", "sent"])
+        .in("status", ["issued", "sent", "overdue"])
         .order("due_date"),
       db
         .from("invoices")
@@ -56,7 +55,9 @@ export default async function DashboardPage() {
   const monthTotal = (monthInvoices.data ?? []).reduce((a, r) => a + r.total, 0);
   const unpaidRows = unpaid.data ?? [];
   const unpaidTotal = unpaidRows.reduce((a, r) => a + r.total, 0);
-  const overdueRows = unpaidRows.filter((r) => r.due_date < today);
+  const overdueRows = unpaidRows.filter(
+    (r) => r.status === "overdue" || r.due_date < today,
+  );
   const toIssueRows = toIssue.data ?? [];
   const trialRows = trials.data ?? [];
 
@@ -64,7 +65,7 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-6xl space-y-8">
       <PageHeader
         title="ダッシュボード"
-        description={format(now, "yyyy年M月d日")}
+        description={`${ty}年${tm}月${td}日`}
         actions={
           <Link href="/deals/new">
             <Button>商談を追加 →</Button>

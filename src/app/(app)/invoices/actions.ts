@@ -1,8 +1,9 @@
 "use server";
 
-import { format } from "date-fns";
 import { revalidatePath } from "next/cache";
+import { todayJST } from "@/lib/dates";
 import { requiredStr } from "@/lib/form";
+import { nextInvoiceNumber } from "@/lib/invoice-number";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function refresh() {
@@ -10,25 +11,16 @@ function refresh() {
   revalidatePath("/");
 }
 
-/** 発行: 請求番号を採番し、発行日を今日にして issued へ */
+/** 発行: 請求番号を採番して issued へ(発行予定日はそのまま) */
 export async function issueInvoice(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
-  const year = new Date().getFullYear();
-
-  const { count } = await db
-    .from("invoices")
-    .select("id", { count: "exact", head: true })
-    .like("invoice_number", `INV-${year}-%`);
-  const invoiceNumber = `INV-${year}-${String((count ?? 0) + 1).padStart(3, "0")}`;
+  const today = todayJST();
+  const invoiceNumber = await nextInvoiceNumber(db, Number(today.slice(0, 4)));
 
   const { error } = await db
     .from("invoices")
-    .update({
-      invoice_number: invoiceNumber,
-      issue_date: format(new Date(), "yyyy-MM-dd"),
-      status: "issued",
-    })
+    .update({ invoice_number: invoiceNumber, status: "issued" })
     .eq("id", id)
     .eq("status", "scheduled");
   if (error) throw error;
@@ -65,7 +57,7 @@ export async function markSent(formData: FormData) {
 export async function registerPayment(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
-  const today = format(new Date(), "yyyy-MM-dd");
+  const today = todayJST();
 
   const { data: invoice, error: fetchError } = await db
     .from("invoices")

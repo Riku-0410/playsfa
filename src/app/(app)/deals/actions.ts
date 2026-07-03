@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -43,7 +44,7 @@ export async function updateDeal(formData: FormData) {
   const values = dealValues(formData);
   const closed =
     values.stage === "won" || values.stage === "lost"
-      ? { closed_at: new Date().toISOString().slice(0, 10) }
+      ? { closed_at: todayJST() }
       : { closed_at: null };
   const { error } = await db
     .from("deals")
