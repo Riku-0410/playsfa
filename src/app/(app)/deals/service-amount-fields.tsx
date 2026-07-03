@@ -45,7 +45,23 @@ export function ServiceAmountFields({
             </CheckboxPill>
           ))}
         </div>
-        <FieldHint>複数選ぶとサービスごとに商談を作成します</FieldHint>
+        {/* 未選択のまま送信できないようにするネイティブ検証用ガード */}
+        <input
+          type="text"
+          value={chosen.length ? "ok" : ""}
+          required
+          onChange={() => {}}
+          tabIndex={-1}
+          aria-hidden
+          className="sr-only"
+        />
+        {chosen.length === 0 ? (
+          <p className="text-xs font-medium text-critical-deep">
+            サービスを1つ以上選択してください
+          </p>
+        ) : (
+          <FieldHint>複数選ぶとサービスごとに商談を作成します</FieldHint>
+        )}
       </Field>
       {chosen.length > 0 && (
         <div className="grid grid-cols-2 gap-4">
