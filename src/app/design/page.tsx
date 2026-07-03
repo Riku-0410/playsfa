@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, FieldError, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { SortableTH } from "@/components/ui/sortable-th";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { formatJPY } from "@/lib/format";
@@ -278,10 +280,30 @@ export default function DesignPage() {
             <Table>
               <thead>
                 <tr>
-                  <TH>請求番号</TH>
-                  <TH>顧客</TH>
+                  {/* SortableTH: sort/dir をURLで持ち、クリックで昇順/降順トグル */}
+                  <SortableTH
+                    label="請求番号"
+                    sortKey="number"
+                    basePath="/design"
+                    sort="number"
+                    dir="asc"
+                  />
+                  <SortableTH
+                    label="顧客"
+                    sortKey="customer"
+                    basePath="/design"
+                    sort="number"
+                    dir="asc"
+                  />
                   <TH>サービス</TH>
-                  <TH numeric>金額(税込)</TH>
+                  <SortableTH
+                    label="金額(税込)"
+                    sortKey="total"
+                    numeric
+                    basePath="/design"
+                    sort="number"
+                    dir="asc"
+                  />
                   <TH>期限</TH>
                   <TH>ステータス</TH>
                 </tr>
@@ -320,6 +342,8 @@ export default function DesignPage() {
                 })}
               </tbody>
             </Table>
+            {/* Pagination: 50件/ページ、フィルタ・ソートのクエリを保持して遷移 */}
+            <Pagination basePath="/design" page={2} total={428} />
           </CardBody>
         </Card>
       </Section>

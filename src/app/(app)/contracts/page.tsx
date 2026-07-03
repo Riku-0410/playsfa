@@ -4,27 +4,55 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { formatJPY } from "@/lib/format";
+import { parseListParams } from "@/lib/list-params";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-export default async function ContractsPage() {
+const SORTS = {
+  customer: "customers(name)",
+  cycle: "billing_cycle",
+  amount: "amount_per_billing",
+  agreement: "agreement_date",
+  billing_start: "billing_start_date",
+  status: "status",
+};
+
+export default async function ContractsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; sort?: string; dir?: string }>;
+}) {
+  const raw = await searchParams;
+  const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
+    sorts: SORTS,
+    defaultSort: "billing_start",
+  });
   const db = createAdminClient();
-  const { data: contracts } = await db
+  const { data: contracts, count } = await db
     .from("contracts")
     .select(
       "id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status, customers(id, name)",
+      { count: "exact" },
     )
-    .order("billing_start_date", { ascending: false });
+    .order(orderExpr, { ascending: dir === "asc" })
+    .order("id")
+    .range(from, to);
+  const total = count ?? 0;
+
+  const keptParams = { sort: raw.sort, dir: raw.dir };
+  const sortProps = { basePath: "/contracts", sort: sortKey, dir };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title="契約"
-        description={`${contracts?.length ?? 0}件`}
+        description={`${total}件`}
         actions={
           <Link href="/contracts/new">
             <Button>契約を登録 →</Button>
@@ -47,13 +75,22 @@ export default async function ContractsPage() {
             <Table>
               <thead>
                 <tr>
-                  <TH>顧客</TH>
+                  <SortableTH label="顧客" sortKey="customer" {...sortProps} />
                   <TH>サービス</TH>
-                  <TH>サイクル</TH>
-                  <TH numeric>請求額/回(税抜)</TH>
-                  <TH>合意日</TH>
-                  <TH>課金開始</TH>
-                  <TH>ステータス</TH>
+                  <SortableTH label="サイクル" sortKey="cycle" {...sortProps} />
+                  <SortableTH
+                    label="請求額/回(税抜)"
+                    sortKey="amount"
+                    numeric
+                    {...sortProps}
+                  />
+                  <SortableTH label="合意日" sortKey="agreement" {...sortProps} />
+                  <SortableTH
+                    label="課金開始"
+                    sortKey="billing_start"
+                    {...sortProps}
+                  />
+                  <SortableTH label="ステータス" sortKey="status" {...sortProps} />
                   <TH />
                 </tr>
               </thead>
@@ -97,6 +134,12 @@ export default async function ContractsPage() {
                 ))}
               </tbody>
             </Table>
+            <Pagination
+              basePath="/contracts"
+              params={keptParams}
+              page={page}
+              total={total}
+            />
           </CardBody>
         )}
       </Card>

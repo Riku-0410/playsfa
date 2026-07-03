@@ -5,9 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
+import { listHref, parseListParams } from "@/lib/list-params";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -30,12 +33,33 @@ const FILTERS: Record<string, string> = {
   paid: "入金済",
 };
 
+const SORTS = {
+  number: "invoice_number",
+  customer: "customers(name)",
+  period: "period_start",
+  issue: "issue_date",
+  due: "due_date",
+  total: "total",
+  status: "status",
+};
+
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; contract?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    contract?: string;
+    page?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
-  const { status, contract } = await searchParams;
+  const { status, contract, ...raw } = await searchParams;
+  const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
+    sorts: SORTS,
+    defaultSort: "issue",
+    defaultDir: "asc",
+  });
   const db = createAdminClient();
   const today = format(new Date(), "yyyy-MM-dd");
 
@@ -43,15 +67,27 @@ export default async function InvoicesPage({
     .from("invoices")
     .select(
       "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers(id, name), contracts(service)",
+      { count: "exact" },
     )
-    .order("issue_date");
+    .order(orderExpr, { ascending: dir === "asc" })
+    .order("id")
+    .range(from, to);
   if (status === "unpaid") {
     query = query.in("status", ["issued", "sent", "overdue"]);
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
   if (contract) query = query.eq("contract_id", contract);
-  const { data: invoices } = await query;
+  const { data: invoices, count } = await query;
+  const total = count ?? 0;
+
+  const keptParams = { status, contract, sort: raw.sort, dir: raw.dir };
+  const sortProps = {
+    basePath: "/invoices",
+    params: { status, contract },
+    sort: sortKey,
+    dir,
+  };
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -60,7 +96,7 @@ export default async function InvoicesPage({
         description={
           contract
             ? "この契約の請求書(自動生成されたスケジュール)"
-            : `${invoices?.length ?? 0}件`
+            : `${total}件`
         }
         actions={
           contract ? (
@@ -73,7 +109,7 @@ export default async function InvoicesPage({
 
       <div className="flex flex-wrap gap-2">
         <Link
-          href="/invoices"
+          href={listHref("/invoices", { contract, sort: raw.sort, dir: raw.dir })}
           className={cn(
             "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
             !status
@@ -86,7 +122,12 @@ export default async function InvoicesPage({
         {Object.entries(FILTERS).map(([k, label]) => (
           <Link
             key={k}
-            href={`/invoices?status=${k}`}
+            href={listHref("/invoices", {
+              status: k,
+              contract,
+              sort: raw.sort,
+              dir: raw.dir,
+            })}
             className={cn(
               "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
               status === k
@@ -115,14 +156,19 @@ export default async function InvoicesPage({
             <Table>
               <thead>
                 <tr>
-                  <TH>請求番号</TH>
-                  <TH>顧客</TH>
+                  <SortableTH label="請求番号" sortKey="number" {...sortProps} />
+                  <SortableTH label="顧客" sortKey="customer" {...sortProps} />
                   <TH>サービス</TH>
-                  <TH>対象期間</TH>
-                  <TH>発行日</TH>
-                  <TH>支払期限</TH>
-                  <TH numeric>金額(税込)</TH>
-                  <TH>ステータス</TH>
+                  <SortableTH label="対象期間" sortKey="period" {...sortProps} />
+                  <SortableTH label="発行日" sortKey="issue" {...sortProps} />
+                  <SortableTH label="支払期限" sortKey="due" {...sortProps} />
+                  <SortableTH
+                    label="金額(税込)"
+                    sortKey="total"
+                    numeric
+                    {...sortProps}
+                  />
+                  <SortableTH label="ステータス" sortKey="status" {...sortProps} />
                   <TH>アクション</TH>
                 </tr>
               </thead>
@@ -247,6 +293,12 @@ export default async function InvoicesPage({
                 })}
               </tbody>
             </Table>
+            <Pagination
+              basePath="/invoices"
+              params={keptParams}
+              page={page}
+              total={total}
+            />
           </CardBody>
         )}
       </Card>
