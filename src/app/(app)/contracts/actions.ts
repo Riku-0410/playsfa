@@ -61,7 +61,6 @@ export async function updateContract(formData: FormData) {
     .eq("id", id);
   if (error) throw error;
   revalidatePath("/contracts");
-  redirect("/contracts");
 }
 
 /** 契約の削除。請求書もカスケードで消えるため、入金済みがあればブロック */

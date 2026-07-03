@@ -200,7 +200,6 @@ export async function updateInvoice(formData: FormData) {
   if (insError) throw insError;
 
   refresh();
-  redirect("/invoices");
 }
 
 export async function markSent(formData: FormData) {

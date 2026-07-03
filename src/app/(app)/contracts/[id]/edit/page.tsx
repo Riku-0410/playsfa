@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConfirmForm } from "@/components/confirm-form";
+import { SaveForm } from "@/components/save-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
@@ -56,7 +57,7 @@ export default async function EditContractPage({
           <CardTitle>契約情報</CardTitle>
         </CardHeader>
         <CardBody>
-          <form action={updateContract} className="space-y-4">
+          <SaveForm action={updateContract} fallback="/contracts" className="space-y-4">
             <input type="hidden" name="id" value={contract.id} />
             <div className="grid grid-cols-2 gap-4">
               <Field>
@@ -102,7 +103,7 @@ export default async function EditContractPage({
             <div className="flex justify-end pt-2">
               <Button type="submit">保存する</Button>
             </div>
-          </form>
+          </SaveForm>
         </CardBody>
       </Card>
 

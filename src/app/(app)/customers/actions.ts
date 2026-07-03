@@ -42,7 +42,6 @@ export async function updateCustomer(formData: FormData) {
   if (error) throw error;
   revalidatePath("/customers");
   revalidatePath(`/customers/${id}`);
-  redirect(`/customers/${id}`);
 }
 
 /** 顧客削除。商談・契約・請求書もカスケードで消えるため、入金済み請求書があればブロック */

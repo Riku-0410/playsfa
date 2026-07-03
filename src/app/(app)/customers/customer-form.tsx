@@ -1,3 +1,4 @@
+import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -26,7 +27,12 @@ export function CustomerForm({
   submitLabel: string;
 }) {
   return (
-    <form action={action} className="space-y-4">
+    <SaveForm
+      action={action}
+      backOnSuccess={!!customer?.id}
+      fallback={customer?.id ? `/customers/${customer.id}` : "/customers"}
+      className="space-y-4"
+    >
       {customer?.id && <input type="hidden" name="id" value={customer.id} />}
       <div className="grid grid-cols-2 gap-4">
         <Field>
@@ -123,6 +129,6 @@ export function CustomerForm({
       <div className="flex justify-end pt-2">
         <Button type="submit">{submitLabel}</Button>
       </div>
-    </form>
+    </SaveForm>
   );
 }

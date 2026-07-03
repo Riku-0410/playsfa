@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ConfirmForm } from "@/components/confirm-form";
+import { SaveForm } from "@/components/save-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,7 +116,7 @@ export default async function EditInvoicePage({
               入金済みの請求書は編集できません。先に「入金を取り消す」を実行してください。
             </p>
           ) : (
-            <form action={updateInvoice} className="space-y-4">
+            <SaveForm action={updateInvoice} fallback="/invoices" className="space-y-4">
               <input type="hidden" name="id" value={invoice.id} />
               <div className="grid grid-cols-2 gap-4">
                 <Field>
@@ -157,7 +158,7 @@ export default async function EditInvoicePage({
               <div className="flex justify-end pt-2">
                 <Button type="submit">保存する</Button>
               </div>
-            </form>
+            </SaveForm>
           )}
         </CardBody>
       </Card>
