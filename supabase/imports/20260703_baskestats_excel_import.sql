@@ -93,7 +93,7 @@ insert into customers (id, name, org_type, note) values ('64b7edd9-1d84-590b-b28
 insert into customers (id, name, org_type, note) values ('06b0b88e-c634-5a1a-84c0-0951b9704e67', '駒澤苫小牧 男子', 'クラブ', e'地域: 北海道') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('983b570a-58c5-5473-aaa9-f76e4ecea105', '名寄高校 男子', '学校', e'地域: 北海道') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('4cfd13d7-e8d8-5b08-a379-52add541d2fc', '和歌山信愛高校 女子', '学校', e'地域: 和歌山') on conflict (id) do nothing;
-insert into customers (id, name, org_type, note) values ('4acc9578-8e3f-5277-a7b5-03096369b7dd', 'ヤマトライジング奈良 男子', 'クラブ', enull) on conflict (id) do nothing;
+insert into customers (id, name, org_type, note) values ('4acc9578-8e3f-5277-a7b5-03096369b7dd', 'ヤマトライジング奈良 男子', 'クラブ', null) on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('055c8973-5fda-5700-87da-db8b8bb0dabd', 'トライフープ岡山U15 男子', 'クラブ', e'地域: 岡山') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('2539feed-3fda-5a37-96aa-6ded7958b3f8', '滝川高校 男子', '学校', e'地域: 兵庫') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('5a495931-479b-5441-9af6-9789d6641f04', '倉吉北高校 女子', '学校', e'地域: 鳥取') on conflict (id) do nothing;
@@ -221,7 +221,7 @@ insert into customers (id, name, org_type, note) values ('49bc0b34-8ced-555f-a08
 insert into customers (id, name, org_type, note) values ('c5d985c3-1be6-5273-9028-dd78633fb95a', 'BRUINS 女子', 'クラブ', e'地域: 岐阜') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('e6001563-911a-5912-9aca-e858f22510f8', '日本医療科学大学 男子', '学校', e'地域: 埼玉') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('f314c7ee-ce1d-5076-9ea3-082e024378e2', '白鷗大学 男子', '学校', e'地域: 栃木') on conflict (id) do nothing;
-insert into customers (id, name, org_type, note) values ('9dc7f78b-dad6-57b7-b55a-467ef41b70ff', '春日々丘高校', '学校', enull) on conflict (id) do nothing;
+insert into customers (id, name, org_type, note) values ('9dc7f78b-dad6-57b7-b55a-467ef41b70ff', '春日々丘高校', '学校', null) on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('d952466b-d3f5-5780-9c90-75db01a05344', '仙台明成高校 女子', '学校', e'地域: 宮城') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('6e93cfdb-ce27-5d75-b9ba-cece612464cf', '精華女子高校 女子', '学校', e'地域: 福岡') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('b95b3a4d-b389-5e61-976b-a5dc3b985e69', '浦和南高校 女子', '学校', e'地域: 埼玉') on conflict (id) do nothing;
@@ -325,9 +325,9 @@ insert into customers (id, name, org_type, note) values ('495d71b7-d234-50ca-829
 insert into customers (id, name, org_type, note) values ('c93ed6d8-f12f-5dc8-a654-cb9690b2faf9', 'FSG 福島高校（開志A&D） 女子', '学校', e'地域: 福島') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('e1aa0be8-f1dc-551b-8402-0e6f4fda3a33', '福岡舞鶴高校 男子', '学校', e'地域: 福岡') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('8a5f7b35-7389-56fc-bc48-d5fa49f8413e', 'FSG 福島高校（開志A&D） 男子', '学校', e'地域: 福島') on conflict (id) do nothing;
-insert into customers (id, name, org_type, note) values ('ae889a80-554f-5bd1-b2bb-d8b6fef858c5', 'KeenBaskestBallClub 男子', 'クラブ', enull) on conflict (id) do nothing;
+insert into customers (id, name, org_type, note) values ('ae889a80-554f-5bd1-b2bb-d8b6fef858c5', 'KeenBaskestBallClub 男子', 'クラブ', null) on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('b2dc2c9d-8a2c-5831-aa02-dbfaf5415811', '明豊高校 女子', '学校', e'地域: 大分') on conflict (id) do nothing;
-insert into customers (id, name, org_type, note) values ('51efb3ea-b01c-5c29-ac75-dd627e515d31', '立命館守山高校 男子', '学校', enull) on conflict (id) do nothing;
+insert into customers (id, name, org_type, note) values ('51efb3ea-b01c-5c29-ac75-dd627e515d31', '立命館守山高校 男子', '学校', null) on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('4293665e-465c-57cf-9be4-4c1accf238a3', 'FC今治高校 女子', '学校', e'地域: 愛媛') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('c4527208-7062-58ea-be86-4932908acdd9', '如水館高校 男子', '学校', e'地域: 広島') on conflict (id) do nothing;
 insert into customers (id, name, org_type, note) values ('7459c17d-7cdb-5b0b-accc-6d5339a37dec', '長崎女子高校 女子', '学校', e'地域: 長崎') on conflict (id) do nothing;
