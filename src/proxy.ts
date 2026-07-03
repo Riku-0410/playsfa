@@ -3,17 +3,14 @@ import type { NextRequest } from "next/server";
 
 /**
  * Basic認証(Supabase Auth導入までの暫定ガード)。
- * BASIC_AUTH_USER / BASIC_AUTH_PASSWORD が未設定の場合、
- * 開発環境では素通し、本番では常に401(フェイルクローズ)。
+ * ローカル開発では常にスキップ。本番は環境変数未設定なら401(フェイルクローズ)。
  */
 export function proxy(request: NextRequest) {
+  if (process.env.NODE_ENV === "development") return NextResponse.next();
+
   const user = process.env.BASIC_AUTH_USER;
   const password = process.env.BASIC_AUTH_PASSWORD;
-
-  if (!user || !password) {
-    if (process.env.NODE_ENV === "development") return NextResponse.next();
-    return unauthorized();
-  }
+  if (!user || !password) return unauthorized();
 
   const expected = `Basic ${btoa(`${user}:${password}`)}`;
   if (request.headers.get("authorization") === expected) {
