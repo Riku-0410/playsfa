@@ -5,12 +5,17 @@
 export function CheckboxPill({
   name,
   value,
-  defaultChecked = false,
+  defaultChecked,
+  checked,
+  onChange,
   children,
 }: {
   name: string;
   value: string;
   defaultChecked?: boolean;
+  /** 指定するとcontrolledになる(onChangeとセットで) */
+  checked?: boolean;
+  onChange?: React.ChangeEventHandler<HTMLInputElement>;
   children: React.ReactNode;
 }) {
   return (
@@ -19,7 +24,9 @@ export function CheckboxPill({
         type="checkbox"
         name={name}
         value={value}
-        defaultChecked={defaultChecked}
+        {...(checked !== undefined
+          ? { checked, onChange }
+          : { defaultChecked: defaultChecked ?? false })}
         className="sr-only"
       />
       {children}

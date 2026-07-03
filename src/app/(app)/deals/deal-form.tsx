@@ -1,9 +1,10 @@
+import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
-import { CheckboxPill } from "@/components/ui/checkbox-pill";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
+import { ServiceAmountFields } from "./service-amount-fields";
 
 type DealDefaults = {
   id?: string;
@@ -33,77 +34,96 @@ export function DealForm({
   submitLabel: string;
 }) {
   return (
-    <form action={action} className="space-y-4">
+    <SaveForm
+      action={action}
+      backOnSuccess={!!deal?.id}
+      fallback={deal?.id ? `/deals/${deal.id}` : "/deals"}
+      className="space-y-4"
+    >
       {deal?.id && <input type="hidden" name="id" value={deal.id} />}
-      <div className="grid grid-cols-2 gap-4">
-        <Field>
-          <Label htmlFor="deal-customer">顧客 *</Label>
-          <SearchSelect
-            id="deal-customer"
-            name="customer_id"
-            required
-            defaultValue={deal?.customer_id}
-            options={customers.map((c) => ({ value: c.id, label: c.name }))}
-          />
-        </Field>
-        {deal?.id ? (
-          <Field>
-            <Label htmlFor="deal-service">サービス *</Label>
-            <Select
-              id="deal-service"
-              name="service"
-              required
-              defaultValue={deal?.service ?? "baskestats"}
-            >
-              {Object.entries(SERVICES).map(([k, v]) => (
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </Select>
-          </Field>
-        ) : (
-          <Field>
-            <Label>サービス *</Label>
-            <div className="flex flex-wrap gap-2 pt-0.5">
-              {Object.entries(SERVICES).map(([k, v]) => (
-                <CheckboxPill
-                  key={k}
-                  name="service"
-                  value={k}
-                  defaultChecked={(deal?.service ?? "baskestats") === k}
-                >
-                  {v.label}
-                </CheckboxPill>
-              ))}
-            </div>
-            <FieldHint>複数選ぶとサービスごとに商談を作成します</FieldHint>
-          </Field>
-        )}
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field>
-          <Label htmlFor="deal-stage">ステージ *</Label>
-          <Select
-            id="deal-stage"
-            name="stage"
-            required
-            defaultValue={deal?.stage ?? "lead"}
-          >
-            {Object.entries(DEAL_STAGES).map(([k, v]) => (
-              <option key={k} value={k}>{v.label}</option>
-            ))}
-          </Select>
-        </Field>
-        <Field>
-          <Label htmlFor="deal-amount">見込額(年・税抜)</Label>
-          <Input
-            id="deal-amount"
-            name="amount_expected"
-            inputMode="numeric"
-            placeholder="480,000"
-            defaultValue={deal?.amount_expected ?? ""}
-          />
-        </Field>
-      </div>
+      {deal?.id ? (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <Label htmlFor="deal-customer">顧客 *</Label>
+              <SearchSelect
+                id="deal-customer"
+                name="customer_id"
+                required
+                defaultValue={deal?.customer_id}
+                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            </Field>
+            <Field>
+              <Label htmlFor="deal-service">サービス *</Label>
+              <Select
+                id="deal-service"
+                name="service"
+                required
+                defaultValue={deal?.service ?? "baskestats"}
+              >
+                {Object.entries(SERVICES).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <Label htmlFor="deal-stage">ステージ *</Label>
+              <Select
+                id="deal-stage"
+                name="stage"
+                required
+                defaultValue={deal?.stage ?? "lead"}
+              >
+                {Object.entries(DEAL_STAGES).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </Select>
+            </Field>
+            <Field>
+              <Label htmlFor="deal-amount">見込額(年・税抜)</Label>
+              <Input
+                id="deal-amount"
+                name="amount_expected"
+                inputMode="numeric"
+                placeholder="480,000"
+                defaultValue={deal?.amount_expected ?? ""}
+              />
+            </Field>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4">
+            <Field>
+              <Label htmlFor="deal-customer">顧客 *</Label>
+              <SearchSelect
+                id="deal-customer"
+                name="customer_id"
+                required
+                defaultValue={deal?.customer_id}
+                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+              />
+            </Field>
+            <Field>
+              <Label htmlFor="deal-stage">ステージ *</Label>
+              <Select
+                id="deal-stage"
+                name="stage"
+                required
+                defaultValue={deal?.stage ?? "lead"}
+              >
+                {Object.entries(DEAL_STAGES).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+          <ServiceAmountFields defaultService={deal?.service ?? "baskestats"} />
+        </>
+      )}
       <Field>
         <Label htmlFor="deal-title">タイトル</Label>
         <Input
@@ -179,6 +199,6 @@ export function DealForm({
       <div className="flex justify-end pt-2">
         <Button type="submit">{submitLabel}</Button>
       </div>
-    </form>
+    </SaveForm>
   );
 }
