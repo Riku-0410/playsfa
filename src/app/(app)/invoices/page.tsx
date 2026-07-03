@@ -10,7 +10,15 @@ import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { issueInvoice, markSent, registerPayment } from "./actions";
+import { ConfirmForm } from "@/components/confirm-form";
+import {
+  issueInvoice,
+  markSent,
+  registerPayment,
+  unissueInvoice,
+  unpayInvoice,
+  unsendInvoice,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -170,7 +178,7 @@ export default async function InvoicesPage({
                         <Badge variant={st.badge} dot>{st.label}</Badge>
                       </TD>
                       <TD>
-                        <div className="flex gap-1.5">
+                        <div className="flex flex-wrap gap-1.5">
                           {inv.status === "scheduled" && (
                             <form action={issueInvoice}>
                               <input type="hidden" name="id" value={inv.id} />
@@ -193,8 +201,44 @@ export default async function InvoicesPage({
                               </Button>
                             </form>
                           )}
+                          {["issued", "overdue"].includes(inv.status) && (
+                            <ConfirmForm
+                              action={unissueInvoice}
+                              message="発行を取り消して「予定」に戻します。よろしいですか？"
+                            >
+                              <input type="hidden" name="id" value={inv.id} />
+                              <Button size="sm" variant="ghost" type="submit">
+                                発行取消
+                              </Button>
+                            </ConfirmForm>
+                          )}
+                          {inv.status === "sent" && (
+                            <ConfirmForm
+                              action={unsendInvoice}
+                              message="送付を取り消して「発行済」に戻しますか？"
+                            >
+                              <input type="hidden" name="id" value={inv.id} />
+                              <Button size="sm" variant="ghost" type="submit">
+                                送付取消
+                              </Button>
+                            </ConfirmForm>
+                          )}
+                          {inv.status === "paid" && (
+                            <ConfirmForm
+                              action={unpayInvoice}
+                              message="入金を取り消します。入金レコードも削除されます。よろしいですか？"
+                            >
+                              <input type="hidden" name="id" value={inv.id} />
+                              <Button size="sm" variant="ghost" type="submit">
+                                入金取消
+                              </Button>
+                            </ConfirmForm>
+                          )}
                           <Link href={`/invoices/${inv.id}/print`}>
                             <Button size="sm" variant="ghost">表示</Button>
+                          </Link>
+                          <Link href={`/invoices/${inv.id}/edit`}>
+                            <Button size="sm" variant="ghost">編集</Button>
                           </Link>
                         </div>
                       </TD>

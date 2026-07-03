@@ -54,6 +54,7 @@ export default async function ContractsPage() {
                   <TH>合意日</TH>
                   <TH>課金開始</TH>
                   <TH>ステータス</TH>
+                  <TH />
                 </tr>
               </thead>
               <tbody>
@@ -86,6 +87,11 @@ export default async function ContractsPage() {
                       <Badge variant={CONTRACT_STATUSES[c.status].badge} dot>
                         {CONTRACT_STATUSES[c.status].label}
                       </Badge>
+                    </TD>
+                    <TD>
+                      <Link href={`/contracts/${c.id}/edit`}>
+                        <Button size="sm" variant="ghost">編集</Button>
+                      </Link>
                     </TD>
                   </TR>
                 ))}

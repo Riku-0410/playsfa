@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ConfirmForm } from "@/components/confirm-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { updateDeal } from "../actions";
+import { deleteDeal, updateDeal } from "../actions";
 import { DealForm } from "../deal-form";
 
 export const dynamic = "force-dynamic";
@@ -69,6 +70,21 @@ export default async function DealDetailPage({
             deal={deal}
             submitLabel="保存する"
           />
+        </CardBody>
+      </Card>
+
+      <Card className="border border-critical/30">
+        <CardBody className="flex items-center justify-between gap-4 py-5">
+          <p className="text-xs text-ink-muted">
+            商談を削除します。作成済みの契約・請求書は残ります。
+          </p>
+          <ConfirmForm
+            action={deleteDeal}
+            message="この商談を削除しますか？"
+          >
+            <input type="hidden" name="id" value={deal.id} />
+            <Button variant="danger" size="sm" type="submit">商談を削除</Button>
+          </ConfirmForm>
         </CardBody>
       </Card>
     </div>

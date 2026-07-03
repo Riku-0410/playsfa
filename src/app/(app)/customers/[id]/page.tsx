@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ConfirmForm } from "@/components/confirm-form";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
   SERVICES,
 } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { addActivity } from "../actions";
+import { addActivity, deleteActivity } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,9 @@ export default async function CustomerDetailPage({
           .join(" / ")}
         actions={
           <>
+            <Link href={`/customers/${customer.id}/edit`}>
+              <Button variant="ghost">編集</Button>
+            </Link>
             <Link href={`/deals/new?customer=${customer.id}`}>
               <Button variant="outline">商談を追加</Button>
             </Link>
@@ -245,7 +249,7 @@ export default async function CustomerDetailPage({
           ) : (
             <ul className="space-y-3">
               {activities.map((a) => (
-                <li key={a.id} className="flex gap-3">
+                <li key={a.id} className="group flex gap-3">
                   <Badge className="mt-0.5 shrink-0" variant="neutral">
                     {ACTIVITY_TYPES[a.type] ?? a.type}
                   </Badge>
@@ -264,6 +268,15 @@ export default async function CustomerDetailPage({
                       )}
                     </p>
                   </div>
+                  <ConfirmForm
+                    action={deleteActivity}
+                    message="この活動ログを削除しますか？"
+                    className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <input type="hidden" name="id" value={a.id} />
+                    <input type="hidden" name="customer_id" value={customer.id} />
+                    <Button variant="ghost" size="sm" type="submit">削除</Button>
+                  </ConfirmForm>
                 </li>
               ))}
             </ul>

@@ -38,6 +38,15 @@ export async function createDeal(formData: FormData) {
   redirect(`/deals/${data.id}`);
 }
 
+export async function deleteDeal(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const { error } = await db.from("deals").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/deals");
+  redirect("/deals");
+}
+
 export async function updateDeal(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");

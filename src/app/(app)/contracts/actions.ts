@@ -44,3 +44,41 @@ export async function createContract(formData: FormData) {
   revalidatePath("/");
   redirect(`/invoices?contract=${contractId}`);
 }
+
+/** 契約の編集。金額・課金開始・サイクルは請求書が生成済みのため変更不可 */
+export async function updateContract(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const { error } = await db
+    .from("contracts")
+    .update({
+      plan_name: str(formData, "plan_name"),
+      agreement_date: requiredStr(formData, "agreement_date"),
+      status: requiredStr(formData, "status") as
+        | "pending" | "active" | "ended" | "churned",
+      note: str(formData, "note"),
+    })
+    .eq("id", id);
+  if (error) throw error;
+  revalidatePath("/contracts");
+  redirect("/contracts");
+}
+
+/** 契約の削除。請求書もカスケードで消えるため、入金済みがあればブロック */
+export async function deleteContract(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const { count } = await db
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("contract_id", id)
+    .eq("status", "paid");
+  if (count && count > 0) {
+    throw new Error("入金済みの請求書がある契約は削除できません");
+  }
+  const { error } = await db.from("contracts").delete().eq("id", id);
+  if (error) throw error;
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  redirect("/contracts");
+}
