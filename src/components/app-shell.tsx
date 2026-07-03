@@ -41,6 +41,13 @@ const NAV = [
     ),
   },
   {
+    href: "/reports",
+    label: "レポート",
+    icon: (
+      <path d="M3.5 13.5V9M8 13.5v-10M12.5 13.5V6" />
+    ),
+  },
+  {
     href: "/settings",
     label: "設定",
     icon: (
