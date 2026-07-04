@@ -44,7 +44,7 @@ export default async function ReportsPage() {
       .not("closed_at", "is", null),
     db
       .from("invoices")
-      .select("issue_date, total, status")
+      .select("due_date, total, status")
       .neq("status", "void"),
   ]);
 
@@ -65,7 +65,7 @@ export default async function ReportsPage() {
   }
   const billing = new Map<string, number[]>();
   for (const r of invRes.data ?? []) {
-    const key = r.issue_date.slice(0, 7);
+    const key = r.due_date.slice(0, 7);
     const arr = billing.get(key) ?? [0, 0];
     arr[r.status === "scheduled" ? 1 : 0] += r.total;
     billing.set(key, arr);
@@ -159,7 +159,7 @@ export default async function ReportsPage() {
         <CardHeader>
           <CardTitle>月別請求額</CardTitle>
           <p className="text-xs text-ink-muted">
-            発行(予定)日ベース・税込。確定=発行済み〜入金済み、薄い色の予定=未発行分(売上見込)
+            支払期限(締切日)ベース・税込。確定=発行済み〜入金済み、薄い色の予定=未発行分(売上見込)
           </p>
         </CardHeader>
         <CardBody>
