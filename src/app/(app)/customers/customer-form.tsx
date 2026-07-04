@@ -1,13 +1,18 @@
 import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
 import { Field, FieldHint, Label } from "@/components/ui/field";
-import { Input, Textarea } from "@/components/ui/input";
+import { Input, Select, Textarea } from "@/components/ui/input";
+import { GENDER_CATEGORIES } from "@/lib/status";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { OwnerNameField } from "./owner-name-field";
 
 type CustomerDefaults = {
   id?: string;
   name?: string;
   name_kana?: string | null;
   org_type?: string | null;
+  gender?: string | null;
+  owner_name?: string | null;
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
@@ -17,7 +22,7 @@ type CustomerDefaults = {
   note?: string | null;
 };
 
-export function CustomerForm({
+export async function CustomerForm({
   action,
   customer,
   submitLabel,
@@ -26,6 +31,20 @@ export function CustomerForm({
   customer?: CustomerDefaults;
   submitLabel: string;
 }) {
+  // 保存済みの弊社担当者名をチップ候補に出す
+  const db = createAdminClient();
+  const { data: owners } = await db
+    .from("customers")
+    .select("owner_name")
+    .not("owner_name", "is", null);
+  const ownerOptions = [
+    ...new Set(
+      (owners ?? [])
+        .map((r) => r.owner_name)
+        .filter((n): n is string => Boolean(n)),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "ja"));
+
   return (
     <SaveForm
       action={action}
@@ -66,7 +85,29 @@ export function CustomerForm({
           />
         </Field>
         <Field>
-          <Label htmlFor="contact_name">担当者</Label>
+          <Label htmlFor="gender">男女</Label>
+          <Select
+            id="gender"
+            name="gender"
+            defaultValue={customer?.gender ?? ""}
+          >
+            <option value="">未設定</option>
+            {Object.entries(GENDER_CATEGORIES).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field>
+          <Label htmlFor="owner_name">弊社担当者</Label>
+          <OwnerNameField
+            options={ownerOptions}
+            defaultValue={customer?.owner_name ?? ""}
+          />
+        </Field>
+        <Field>
+          <Label htmlFor="contact_name">先方担当者</Label>
           <Input
             id="contact_name"
             name="contact_name"

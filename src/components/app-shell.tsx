@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { savedListHref } from "@/components/list-state";
 
 const NAV = [
   {
@@ -58,6 +59,7 @@ const NAV = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   return (
     <div className="flex min-h-dvh w-full">
       <aside className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col gap-6 px-4 py-7">
@@ -77,6 +79,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={(e) => {
+                  // 一覧は前回の状態(ページ・検索・ソート)へ戻す。修飾キー時は素のURLに任せる
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  const saved = savedListHref(item.href);
+                  if (saved !== item.href) {
+                    e.preventDefault();
+                    router.push(saved);
+                  }
+                }}
                 className={cn(
                   "flex h-11 items-center gap-3 rounded-full px-4 text-sm font-semibold transition-colors",
                   active

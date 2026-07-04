@@ -3,6 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Meter } from "@/components/ui/meter";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
@@ -10,6 +12,59 @@ import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { saveTrialTargets } from "./actions";
+
+/** KPIカードの系列。チャートと同じ固定順・固定色 */
+const SERVICE_KEYS = Object.keys(SERVICES) as (keyof typeof SERVICES)[];
+
+/** 系列ドット+メーター+実績/目標+入力欄の1行。全社・担当者別で共通 */
+function TargetRow({
+  service,
+  actual,
+  target,
+  inputName,
+}: {
+  service: keyof typeof SERVICES;
+  actual: number;
+  target: number | undefined;
+  inputName: string;
+}) {
+  const meta = SERVICES[service];
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="flex w-20 shrink-0 items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+        <span
+          className="size-2 shrink-0 rounded-full"
+          style={{ background: meta.seriesVar }}
+        />
+        {meta.label}
+      </span>
+      <Meter
+        value={actual}
+        max={target ?? 0}
+        color={meta.seriesVar}
+        className="min-w-20 flex-1"
+      />
+      <span className="w-24 shrink-0 text-right text-xs text-ink-secondary tabular-nums">
+        {target
+          ? `${actual} / ${target}件(${Math.round((actual / target) * 100)}%)`
+          : `${actual}件 / 目標未設定`}
+      </span>
+      <label className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+        目標
+        <Input
+          type="number"
+          name={inputName}
+          min={0}
+          step={1}
+          defaultValue={target ?? ""}
+          className="h-9 w-16 px-2.5 text-right"
+        />
+        件
+      </label>
+    </div>
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +75,7 @@ export default async function DashboardPage() {
   const soon = addDaysJST(14);
   const [ty, tm, td] = today.split("-").map(Number);
 
-  const [monthInvoices, unpaid, toIssue, trials, activeContracts] =
+  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes] =
     await Promise.all([
       db
         .from("invoices")
@@ -50,6 +105,19 @@ export default async function DashboardPage() {
         .from("contracts")
         .select("id", { count: "exact", head: true })
         .eq("status", "active"),
+      db
+        .from("deals")
+        .select("service, customers(owner_name)")
+        .gte("trial_start", monthStart)
+        .lte("trial_start", monthEnd),
+      db
+        .from("trial_targets")
+        .select("service, owner_name, target_count")
+        .eq("month", monthStart),
+      db
+        .from("customers")
+        .select("owner_name")
+        .not("owner_name", "is", null),
     ]);
 
   const monthTotal = (monthInvoices.data ?? []).reduce((a, r) => a + r.total, 0);
@@ -60,6 +128,33 @@ export default async function DashboardPage() {
   );
   const toIssueRows = toIssue.data ?? [];
   const trialRows = trials.data ?? [];
+
+  // KPI: 今月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
+  const targetOf = new Map<string, number>();
+  for (const r of targetRes.data ?? []) {
+    targetOf.set(`${r.owner_name}|${r.service}`, r.target_count);
+  }
+  const actualOf = new Map<string, number>();
+  const bump = (key: string) => actualOf.set(key, (actualOf.get(key) ?? 0) + 1);
+  let unassignedTrials = 0;
+  for (const r of monthTrials.data ?? []) {
+    bump(`|${r.service}`);
+    const owner = r.customers?.owner_name;
+    if (owner) bump(`${owner}|${r.service}`);
+    else unassignedTrials += 1;
+  }
+  // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 今月の目標を持つ担当者
+  const reps = [
+    ...new Set(
+      [
+        ...(ownerRes.data ?? []).map((r) => r.owner_name),
+        ...(targetRes.data ?? []).map((r) => r.owner_name),
+      ].filter((n): n is string => Boolean(n)),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "ja"));
+  const kpiActual = SERVICE_KEYS.reduce((a, s) => a + (actualOf.get(`|${s}`) ?? 0), 0);
+  const kpiTarget = SERVICE_KEYS.reduce((a, s) => a + (targetOf.get(`|${s}`) ?? 0), 0);
+  const kpiPct = kpiTarget > 0 ? Math.round((kpiActual / kpiTarget) * 100) : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -72,6 +167,91 @@ export default async function DashboardPage() {
           </Link>
         }
       />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>今月のトライアル目標達成率</CardTitle>
+          <p className="text-xs text-ink-muted">
+            {ty}年{tm}月・トライアル導入日ベース
+          </p>
+        </CardHeader>
+        <CardBody>
+          <form action={saveTrialTargets} className="space-y-6">
+            <input type="hidden" name="month" value={monthStart} />
+            <div className="grid items-center gap-x-10 gap-y-6 lg:grid-cols-[13rem_1fr]">
+              {kpiPct !== null ? (
+                <div>
+                  <p className="text-5xl font-bold tracking-tight">
+                    {kpiPct}
+                    <span className="text-2xl font-semibold text-ink-secondary">
+                      %
+                    </span>
+                  </p>
+                  <p className="mt-2 text-xs text-ink-muted">
+                    実績 {kpiActual}件 / 目標 {kpiTarget}件
+                  </p>
+                  <Meter value={kpiActual} max={kpiTarget} className="mt-3" />
+                </div>
+              ) : (
+                <div>
+                  <p className="text-5xl font-bold tracking-tight text-ink-muted">
+                    —
+                  </p>
+                  <p className="mt-2 text-xs text-ink-muted">
+                    目標が未設定です。サービスごとの目標件数を入力して保存してください。
+                  </p>
+                </div>
+              )}
+              <div className="space-y-3">
+                {SERVICE_KEYS.map((s) => (
+                  <TargetRow
+                    key={s}
+                    service={s}
+                    actual={actualOf.get(`|${s}`) ?? 0}
+                    target={targetOf.get(`|${s}`)}
+                    inputName={`target_${s}`}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {reps.length > 0 && (
+              <div className="border-t border-line pt-5">
+                <p className="text-xs font-bold text-ink-secondary">担当者別</p>
+                <div className="mt-4 grid gap-x-10 gap-y-5 lg:grid-cols-2">
+                  {reps.map((rep, i) => (
+                    <div key={rep} className="space-y-2.5">
+                      <p className="text-sm font-bold">{rep}</p>
+                      <input type="hidden" name={`rep_name_${i}`} value={rep} />
+                      {SERVICE_KEYS.map((s) => (
+                        <TargetRow
+                          key={s}
+                          service={s}
+                          actual={actualOf.get(`${rep}|${s}`) ?? 0}
+                          target={targetOf.get(`${rep}|${s}`)}
+                          inputName={`rep_${i}_${s}`}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                {unassignedTrials > 0 && (
+                  <p className="mt-4 text-xs text-ink-muted">
+                    担当未設定の顧客のトライアルが今月{unassignedTrials}
+                    件あります(全社の実績には含まれています)。顧客に弊社担当者を設定すると担当者別にも反映されます。
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex justify-end">
+              <Button type="submit" size="sm" variant="outline">
+                目標を保存
+              </Button>
+            </div>
+          </form>
+        </CardBody>
+      </Card>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="今月の請求" value={formatJPY(monthTotal)} />

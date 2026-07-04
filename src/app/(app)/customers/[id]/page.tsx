@@ -14,6 +14,7 @@ import {
   BILLING_CYCLES,
   CONTRACT_STATUSES,
   DEAL_STAGES,
+  GENDER_CATEGORIES,
   SERVICES,
 } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -68,7 +69,11 @@ export default async function CustomerDetailPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title={customer.name}
-        description={[customer.org_type, customer.contact_name]
+        description={[
+          customer.org_type,
+          customer.gender && GENDER_CATEGORIES[customer.gender],
+          customer.owner_name && `担当: ${customer.owner_name}`,
+        ]
           .filter(Boolean)
           .join(" / ")}
         actions={
@@ -103,7 +108,9 @@ export default async function CustomerDetailPage({
             </div>
             <dl className="space-y-2 pt-2">
               {[
-                ["担当者", customer.contact_name],
+                ["男女", customer.gender && GENDER_CATEGORIES[customer.gender]],
+                ["弊社担当者", customer.owner_name],
+                ["先方担当者", customer.contact_name],
                 ["メール", customer.contact_email],
                 ["電話", customer.contact_phone],
                 ["請求先", customer.billing_name],

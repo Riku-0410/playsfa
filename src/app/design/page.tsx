@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Field, FieldError, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { ListSearch } from "@/components/ui/list-search";
+import { Meter } from "@/components/ui/meter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -391,6 +392,26 @@ export default function DesignPage() {
             <CardBody className="space-y-3">
               <p className="text-3xl font-extrabold tracking-tight">92日</p>
               <DotProgress total={50} value={37} />
+            </CardBody>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>メーター(目標達成率)</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              {/* 塗り=進捗、トラック=同系色の薄い段。100%超は満杯で頭打ち */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-ink-secondary">合計 62%</p>
+                <Meter value={8} max={13} />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-ink-secondary">系列色(playcut)</p>
+                <Meter value={5} max={8} color={SERVICES.playcut.seriesVar} />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-ink-secondary">系列色(baskestats)</p>
+                <Meter value={3} max={5} color={SERVICES.baskestats.seriesVar} />
+              </div>
             </CardBody>
           </Card>
           <Card>

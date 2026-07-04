@@ -239,11 +239,13 @@ export type Database = {
           contact_name: string | null
           contact_phone: string | null
           created_at: string
+          gender: Database["public"]["Enums"]["gender_category"] | null
           id: string
           name: string
           name_kana: string | null
           note: string | null
           org_type: string | null
+          owner_name: string | null
           updated_at: string
         }
         Insert: {
@@ -254,11 +256,13 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          gender?: Database["public"]["Enums"]["gender_category"] | null
           id?: string
           name: string
           name_kana?: string | null
           note?: string | null
           org_type?: string | null
+          owner_name?: string | null
           updated_at?: string
         }
         Update: {
@@ -269,11 +273,13 @@ export type Database = {
           contact_name?: string | null
           contact_phone?: string | null
           created_at?: string
+          gender?: Database["public"]["Enums"]["gender_category"] | null
           id?: string
           name?: string
           name_kana?: string | null
           note?: string | null
           org_type?: string | null
+          owner_name?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -497,6 +503,30 @@ export type Database = {
           },
         ]
       }
+      trial_targets: {
+        Row: {
+          month: string
+          owner_name: string
+          service: Database["public"]["Enums"]["service_tag"]
+          target_count: number
+          updated_at: string
+        }
+        Insert: {
+          month: string
+          owner_name?: string
+          service: Database["public"]["Enums"]["service_tag"]
+          target_count: number
+          updated_at?: string
+        }
+        Update: {
+          month?: string
+          owner_name?: string
+          service?: Database["public"]["Enums"]["service_tag"]
+          target_count?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -515,6 +545,7 @@ export type Database = {
         | "negotiation"
         | "won"
         | "lost"
+      gender_category: "mens" | "womens" | "mixed"
       invoice_status:
         | "scheduled"
         | "issued"
@@ -657,6 +688,7 @@ export const Constants = {
       billing_cycle: ["semiannual", "annual"],
       contract_status: ["pending", "active", "ended", "churned"],
       deal_stage: ["lead", "contacted", "trial", "negotiation", "won", "lost"],
+      gender_category: ["mens", "womens", "mixed"],
       invoice_status: [
         "scheduled",
         "issued",

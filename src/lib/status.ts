@@ -37,3 +37,10 @@ export const BILLING_CYCLES: Record<string, string> = {
   semiannual: "半期払い",
   annual: "年払い",
 };
+
+/** 顧客(チーム)の男女カテゴリ */
+export const GENDER_CATEGORIES: Record<string, string> = {
+  mens: "男子",
+  womens: "女子",
+  mixed: "混合",
+};

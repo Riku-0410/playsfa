@@ -10,6 +10,8 @@ function customerValues(formData: FormData) {
     name: requiredStr(formData, "name"),
     name_kana: str(formData, "name_kana"),
     org_type: str(formData, "org_type"),
+    gender: str(formData, "gender") as "mens" | "womens" | "mixed" | null,
+    owner_name: str(formData, "owner_name"),
     contact_name: str(formData, "contact_name"),
     contact_email: str(formData, "contact_email"),
     contact_phone: str(formData, "contact_phone"),

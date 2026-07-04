@@ -10,6 +10,7 @@ import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { formatDate } from "@/lib/format";
 import { parseListParams, searchQuery } from "@/lib/list-params";
+import { GENDER_CATEGORIES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export const dynamic = "force-dynamic";
 const SORTS = {
   name: "name",
   org_type: "org_type",
+  owner: "owner_name",
   created: "created_at",
 };
 
@@ -39,15 +41,16 @@ export default async function CustomersPage({
   const db = createAdminClient();
   let query = db
     .from("customers")
-    .select("id, name, org_type, contact_name, contact_email, created_at", {
-      count: "exact",
-    })
+    .select(
+      "id, name, org_type, gender, owner_name, contact_name, contact_email, created_at",
+      { count: "exact" },
+    )
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
   if (q) {
     query = query.or(
-      `name.ilike.%${q}%,name_kana.ilike.%${q}%,contact_name.ilike.%${q}%`,
+      `name.ilike.%${q}%,name_kana.ilike.%${q}%,contact_name.ilike.%${q}%,owner_name.ilike.%${q}%`,
     );
   }
   const { data: customers, count } = await query;
@@ -105,7 +108,9 @@ export default async function CustomersPage({
                 <tr>
                   <SortableTH label="名前" sortKey="name" {...sortProps} />
                   <SortableTH label="種別" sortKey="org_type" {...sortProps} />
-                  <TH>担当者</TH>
+                  <TH>男女</TH>
+                  <SortableTH label="弊社担当者" sortKey="owner" {...sortProps} />
+                  <TH>先方担当者</TH>
                   <TH>メール</TH>
                   <SortableTH label="登録日" sortKey="created" {...sortProps} />
                 </tr>
@@ -123,6 +128,10 @@ export default async function CustomersPage({
                       </Link>
                     </TD>
                     <TD className="text-ink-secondary">{c.org_type ?? "—"}</TD>
+                    <TD className="text-ink-secondary">
+                      {c.gender ? GENDER_CATEGORIES[c.gender] : "—"}
+                    </TD>
+                    <TD className="text-ink-secondary">{c.owner_name ?? "—"}</TD>
                     <TD className="text-ink-secondary">{c.contact_name ?? "—"}</TD>
                     <TD className="text-ink-secondary">{c.contact_email ?? "—"}</TD>
                     <TD className="text-ink-secondary">
