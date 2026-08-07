@@ -12,6 +12,7 @@ import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
 /** KPIカードの系列。チャートと同じ固定順・固定色 */
@@ -357,6 +358,7 @@ export default async function DashboardPage() {
                   <TH>支払期限</TH>
                   <TH numeric>金額</TH>
                   <TH>ステータス</TH>
+                  <TH>アクション</TH>
                 </tr>
               </thead>
               <tbody>
@@ -374,6 +376,14 @@ export default async function DashboardPage() {
                       <Badge variant={INVOICE_STATUSES[r.status].badge} dot>
                         {INVOICE_STATUSES[r.status].label}
                       </Badge>
+                    </TD>
+                    <TD>
+                      <form action={registerPayment}>
+                        <input type="hidden" name="id" value={r.id} />
+                        <Button size="sm" variant="outline" type="submit">
+                          入金登録
+                        </Button>
+                      </form>
                     </TD>
                   </TR>
                 ))}
