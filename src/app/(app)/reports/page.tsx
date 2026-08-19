@@ -6,6 +6,7 @@ import {
   MonthlyStackedColumns,
   type MonthlyStackedDatum,
 } from "@/components/monthly-stacked-columns";
+import { contractArr } from "@/lib/arr";
 import { todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { SERVICES } from "@/lib/status";
@@ -23,6 +24,16 @@ const INVOICE_SERIES = [
   { key: "scheduled", label: "予定", color: "var(--color-accent-300)" },
 ];
 
+/**
+ * 入金予定の3系列。請求済み/予定はaccent濃淡(確度)、期限超過のみステータス色。
+ * critical-deep + accent + accent-300 はCVD分離検証済み(criticalはaccentと識別不能なので不可)
+ */
+const UNPAID_SERIES = [
+  { key: "overdue", label: "期限超過", color: "var(--color-critical-deep)" },
+  { key: "billed", label: "請求済み", color: "var(--color-accent)" },
+  { key: "scheduled", label: "予定", color: "var(--color-accent-300)" },
+];
+
 function addMonth(key: string, n: number): string {
   const [y, m] = key.split("-").map(Number);
   const t = y * 12 + (m - 1) + n;
@@ -35,7 +46,7 @@ function sum(values: number[]): number {
 
 export default async function ReportsPage() {
   const db = createAdminClient();
-  const [trialRes, wonRes, invRes] = await Promise.all([
+  const [trialRes, wonRes, invRes, contractRes] = await Promise.all([
     db.from("deals").select("trial_start, service").not("trial_start", "is", null),
     db
       .from("deals")
@@ -46,6 +57,11 @@ export default async function ReportsPage() {
       .from("invoices")
       .select("due_date, total, status")
       .neq("status", "void"),
+    db
+      .from("contracts")
+      .select(
+        "service, billing_cycle, amount_per_billing, billing_start_date, contract_fees(amount, recurring)",
+      ),
   ]);
 
   // 月キー → 系列順の値
@@ -71,9 +87,40 @@ export default async function ReportsPage() {
     billing.set(key, arr);
   }
 
+  // 入金予定 = 未入金請求書の支払期限月別。期限超過はcron未反映分もdue_dateで拾う
+  const today = todayJST();
+  const unpaid = new Map<string, number[]>();
+  for (const r of invRes.data ?? []) {
+    if (r.status === "paid") continue;
+    const key = r.due_date.slice(0, 7);
+    const arr = unpaid.get(key) ?? UNPAID_SERIES.map(() => 0);
+    const si =
+      r.status === "overdue" || r.due_date < today
+        ? 0
+        : r.status === "scheduled"
+          ? 2
+          : 1;
+    arr[si] += r.total;
+    unpaid.set(key, arr);
+  }
+
+  // ARRの月別増加分(課金開始月ベース)。解約0%想定なので churned/ended も継続扱い
+  const arrAdded = new Map<string, number[]>();
+  for (const c of contractRes.data ?? []) {
+    const key = c.billing_start_date.slice(0, 7);
+    const arr = arrAdded.get(key) ?? SERVICE_SERIES.map(() => 0);
+    arr[SERVICE_SERIES.findIndex((s) => s.key === c.service)] += contractArr(c);
+    arrAdded.set(key, arr);
+  }
+
   // 全チャート共通の月レンジ(比較しやすいよう縦に揃える)
-  const thisMonth = todayJST().slice(0, 7);
-  const allKeys = [...trials.keys(), ...won.keys(), ...billing.keys()].sort();
+  const thisMonth = today.slice(0, 7);
+  const allKeys = [
+    ...trials.keys(),
+    ...won.keys(),
+    ...billing.keys(),
+    ...arrAdded.keys(),
+  ].sort();
   const first = allKeys[0] ?? thisMonth;
   const last = allKeys[allKeys.length - 1] ?? thisMonth;
   const end = last > thisMonth ? last : thisMonth;
@@ -86,6 +133,15 @@ export default async function ReportsPage() {
   const trialMonths = monthsOf(trials, SERVICE_SERIES.length);
   const wonMonths = monthsOf(won, SERVICE_SERIES.length);
   const billingMonths = monthsOf(billing, 2);
+  const unpaidMonths = monthsOf(unpaid, UNPAID_SERIES.length);
+
+  // 累積ARR = 各月までの増加分の積み上げ
+  const running = SERVICE_SERIES.map(() => 0);
+  const arrMonths: MonthlyStackedDatum[] = range.map((k) => {
+    const added = arrAdded.get(k);
+    if (added) added.forEach((v, i) => (running[i] += v));
+    return { key: k, values: [...running] };
+  });
 
   const idxThis = range.indexOf(thisMonth);
   const trialTotals = trialMonths.map((m) => sum(m.values));
@@ -157,6 +213,23 @@ export default async function ReportsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>ARR積み上がり(解約0%想定)</CardTitle>
+          <p className="text-xs text-ink-muted">
+            課金開始月ベースの累積ARR・税抜(利用料の年換算+毎年かかる契約費用)。解約・終了した契約も継続する想定で積み上げ。将来開始のpending契約も開始月から反映
+          </p>
+        </CardHeader>
+        <CardBody>
+          <MonthlyStackedColumns
+            title="ARR積み上がり(解約0%想定)"
+            data={arrMonths}
+            series={SERVICE_SERIES}
+            money
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>月別請求額</CardTitle>
           <p className="text-xs text-ink-muted">
             支払期限(締切日)ベース・税込。確定=発行済み〜入金済み、薄い色の予定=未発行分(売上見込)
@@ -167,6 +240,23 @@ export default async function ReportsPage() {
             title="月別請求額"
             data={billingMonths}
             series={INVOICE_SERIES}
+            money
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>月別入金予定</CardTitle>
+          <p className="text-xs text-ink-muted">
+            未入金の請求書を支払期限月で集計・税込(入金済みは除外)。請求済み=発行〜送付済み、薄い色の予定=未発行分、赤=期限超過
+          </p>
+        </CardHeader>
+        <CardBody>
+          <MonthlyStackedColumns
+            title="月別入金予定"
+            data={unpaidMonths}
+            series={UNPAID_SERIES}
             money
           />
         </CardBody>
