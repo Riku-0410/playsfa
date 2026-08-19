@@ -6,7 +6,6 @@ import {
   MonthlyStackedColumns,
   type MonthlyStackedDatum,
 } from "@/components/monthly-stacked-columns";
-import { PAYMENT_TERM_DAYS } from "@/lib/billing";
 import { todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { SERVICES } from "@/lib/status";
@@ -91,7 +90,7 @@ export default async function ReportsPage() {
 
   // 入金予測(解約0%想定) = 実請求書(入金済みも系列を分けて積む) + 全契約が更新され続ける前提の将来請求。
   // 請求書が既にある回はその金額を使い(入金済みは除外)、未生成の回だけ請求書生成と
-  // 同じルール(利用料+契約年度初回の毎年費用、税切り捨て、期限=発行+30日)で「予定」に足す
+  // 同じルール(利用料+契約年度初回の毎年費用、税切り捨て、期限=発行月の末日)で「予定」に足す
   const today = todayJST();
   const thisMonth = today.slice(0, 7);
   const projEnd = addMonth(thisMonth, 12);
@@ -129,8 +128,8 @@ export default async function ReportsPage() {
         new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate(),
       );
       const issue = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}-${pad2(day)}`;
-      const due = new Date(anchor.getFullYear(), anchor.getMonth(), day + PAYMENT_TERM_DAYS);
-      const dueKey = `${due.getFullYear()}-${pad2(due.getMonth() + 1)}`;
+      // 支払期限 = 発行月の末日なので、期限の月 = 発行月
+      const dueKey = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}`;
       if (dueKey > projEnd) break;
       if (invoiced.has(`${c.id}:${issue}`) || dueKey < thisMonth) continue;
       const subtotal =

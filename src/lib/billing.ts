@@ -1,4 +1,4 @@
-import { addDays, addMonths, format } from "date-fns";
+import { addDays, addMonths, endOfMonth, format } from "date-fns";
 
 export type BillingCycle = "semiannual" | "annual";
 
@@ -19,8 +19,8 @@ export type InvoiceDraft = {
   items: InvoiceItemDraft[];
 };
 
-/** 支払期限 = 発行日 + 30日(v1の固定ルール) */
-export const PAYMENT_TERM_DAYS = 30;
+/** 支払期限 = 発行日(=請求期間開始日)が属する月の末日 */
+export const dueDateFor = (issueDate: Date) => endOfMonth(issueDate);
 
 function parseDate(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -76,7 +76,7 @@ export function computeInvoiceSchedule(input: {
       period_start: fmt(periodStart),
       period_end: fmt(periodEnd),
       issue_date: fmt(periodStart),
-      due_date: fmt(addDays(periodStart, PAYMENT_TERM_DAYS)),
+      due_date: fmt(dueDateFor(periodStart)),
       subtotal,
       tax_amount: taxAmount,
       total: subtotal + taxAmount,
