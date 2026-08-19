@@ -45,6 +45,7 @@ export function MonthlyStackedColumns({
   unit = "件",
   money = false,
   title,
+  subtotals,
 }: {
   data: MonthlyStackedDatum[];
   series: ChartSeries[];
@@ -53,6 +54,8 @@ export function MonthlyStackedColumns({
   money?: boolean;
   /** チャート全体のaria-label(例「月別成約件数」) */
   title: string;
+  /** ツールチップの合計行を系列グループ別に分ける(indicesはseriesのインデックス) */
+  subtotals?: { label: string; indices: number[] }[];
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const fmtFull = (v: number) => (money ? formatJPY(v) : `${v}${unit}`);
@@ -237,12 +240,27 @@ export function MonthlyStackedColumns({
               <span className="text-ink-secondary">{s.label}</span>
             </p>
           ))}
-          <p className="mt-1 border-t border-line pt-1 text-xs">
-            <strong className="tabular-nums text-ink">
-              {fmtFull(totals[hover])}
-            </strong>{" "}
-            <span className="text-ink-secondary">合計</span>
-          </p>
+          <div className="mt-1 border-t border-line pt-1">
+            {subtotals?.map((g) => (
+              <p key={g.label} className="text-xs">
+                <strong className="tabular-nums text-ink">
+                  {fmtFull(
+                    g.indices.reduce(
+                      (a, si) => a + (data[hover].values[si] ?? 0),
+                      0,
+                    ),
+                  )}
+                </strong>{" "}
+                <span className="text-ink-secondary">{g.label}</span>
+              </p>
+            ))}
+            <p className="text-xs">
+              <strong className="tabular-nums text-ink">
+                {fmtFull(totals[hover])}
+              </strong>{" "}
+              <span className="text-ink-secondary">合計</span>
+            </p>
+          </div>
         </div>
       )}
     </div>

@@ -25,10 +25,12 @@ const INVOICE_SERIES = [
 ];
 
 /**
- * 入金予定の3系列。請求済み/予定はaccent濃淡(確度)、期限超過のみステータス色。
- * critical-deep + accent + accent-300 はCVD分離検証済み(criticalはaccentと識別不能なので不可)
+ * 入金予測の4系列。入金済みは無彩色(完了・非アクション)、請求済み/予定はaccent濃淡(確度)、
+ * 期限超過のみステータス色。critical-deep + accent + accent-300 はCVD分離検証済み
+ * (criticalはaccentと識別不能なので不可)。無彩色は色相を持たないのでCVD分離を崩さない
  */
 const UNPAID_SERIES = [
+  { key: "paid", label: "入金済み", color: "var(--color-ink-muted)" },
   { key: "overdue", label: "期限超過", color: "var(--color-critical-deep)" },
   { key: "billed", label: "請求済み", color: "var(--color-accent)" },
   { key: "scheduled", label: "予定", color: "var(--color-accent-300)" },
@@ -87,7 +89,7 @@ export default async function ReportsPage() {
     billing.set(key, arr);
   }
 
-  // 入金予測(解約0%想定) = 未入金の実請求書 + 全契約が更新され続ける前提の将来請求。
+  // 入金予測(解約0%想定) = 実請求書(入金済みも系列を分けて積む) + 全契約が更新され続ける前提の将来請求。
   // 請求書が既にある回はその金額を使い(入金済みは除外)、未生成の回だけ請求書生成と
   // 同じルール(利用料+契約年度初回の毎年費用、税切り捨て、期限=発行+30日)で「予定」に足す
   const today = todayJST();
@@ -102,13 +104,14 @@ export default async function ReportsPage() {
   const invoiced = new Set<string>();
   for (const r of invRes.data ?? []) {
     if (r.contract_id) invoiced.add(`${r.contract_id}:${r.issue_date}`);
-    if (r.status === "paid") continue;
     const si =
-      r.status === "overdue" || r.due_date < today
+      r.status === "paid"
         ? 0
-        : r.status === "scheduled"
-          ? 2
-          : 1;
+        : r.status === "overdue" || r.due_date < today
+          ? 1
+          : r.status === "scheduled"
+            ? 3
+            : 2;
     addUnpaid(r.due_date.slice(0, 7), si, r.total);
   }
   const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -132,7 +135,7 @@ export default async function ReportsPage() {
       if (invoiced.has(`${c.id}:${issue}`) || dueKey < thisMonth) continue;
       const subtotal =
         c.amount_per_billing + ((k * period) % 12 === 0 ? recurringFees : 0);
-      addUnpaid(dueKey, 2, subtotal + Math.floor((subtotal * c.tax_rate) / 100));
+      addUnpaid(dueKey, 3, subtotal + Math.floor((subtotal * c.tax_rate) / 100));
     }
   }
   const unpaidFirst = [...unpaid.keys()].sort()[0] ?? thisMonth;
@@ -247,7 +250,7 @@ export default async function ReportsPage() {
         <CardHeader>
           <CardTitle>月別入金予測(解約0%想定)</CardTitle>
           <p className="text-xs text-ink-muted">
-            未入金の請求書に加え、全契約が更新され続ける前提の将来請求(12ヶ月先まで)を支払期限月で集計・税込(入金済みは除外)。請求済み=発行〜送付済み、薄い色の予定=未発行分+更新見込み、赤=期限超過
+            実際の請求書に加え、全契約が更新され続ける前提の将来請求(12ヶ月先まで)を支払期限月で集計・税込。グレー=入金済み、請求済み=発行〜送付済み、薄い色の予定=未発行分+更新見込み、赤=期限超過
           </p>
         </CardHeader>
         <CardBody>
@@ -256,6 +259,10 @@ export default async function ReportsPage() {
             data={unpaidMonths}
             series={UNPAID_SERIES}
             money
+            subtotals={[
+              { label: "入金済み計", indices: [0] },
+              { label: "未入金計", indices: [1, 2, 3] },
+            ]}
           />
         </CardBody>
       </Card>
