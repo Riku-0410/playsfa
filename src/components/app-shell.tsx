@@ -21,6 +21,13 @@ const NAV = [
     ),
   },
   {
+    href: "/tasks",
+    label: "タスク",
+    icon: (
+      <path d="m3 8 2.5 2.5L13 3.5M3.5 13h9" />
+    ),
+  },
+  {
     href: "/deals",
     label: "商談",
     icon: (

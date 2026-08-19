@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 
 /** 状態(ページ・検索・ソート)を覚える一覧ページのパス */
-const LIST_PATHS = ["/customers", "/deals", "/contracts", "/invoices"];
+const LIST_PATHS = ["/customers", "/deals", "/contracts", "/invoices", "/tasks"];
 
 const storageKey = (path: string) => `liststate:${path}`;
 
