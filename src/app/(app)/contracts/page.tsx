@@ -7,7 +7,9 @@ import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
+import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
+import { calcArr } from "@/lib/arr";
 import { formatJPY } from "@/lib/format";
 import { parseListParams, searchQuery } from "@/lib/list-params";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
@@ -51,8 +53,25 @@ export default async function ContractsPage({
     .order("id")
     .range(from, to);
   if (q) query = query.ilike("customers.name", `%${q}%`);
-  const { data: contracts, count } = await query;
+
+  // ARRは検索・ページングと独立に全契約から出す
+  const arrQuery = db
+    .from("contracts")
+    .select(
+      "service, billing_cycle, amount_per_billing, status, contract_fees(amount, recurring)",
+    )
+    .in("status", ["active", "pending"]);
+
+  const [{ data: contracts, count }, { data: arrRows }] = await Promise.all([
+    query,
+    arrQuery,
+  ]);
   const total = count ?? 0;
+
+  const arr = calcArr((arrRows ?? []).filter((c) => c.status === "active"));
+  const pendingArr = calcArr(
+    (arrRows ?? []).filter((c) => c.status === "pending"),
+  );
 
   const keptParams = { q: q ?? undefined, sort: raw.sort, dir: raw.dir };
   const sortProps = {
@@ -73,6 +92,23 @@ export default async function ContractsPage({
           </Link>
         }
       />
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard label="ARR(課金中)" value={formatJPY(arr.total)} />
+        <StatCard
+          label={`ARR ${SERVICES.playcut.label}`}
+          value={formatJPY(arr.byService.playcut.total)}
+        />
+        <StatCard
+          label={`ARR ${SERVICES.baskestats.label}`}
+          value={formatJPY(arr.byService.baskestats.total)}
+        />
+      </div>
+      <p className="text-xs text-ink-muted">
+        課金中{arr.count}件の年換算。内訳は利用料 {formatJPY(arr.usage)} +
+        毎年かかる契約費用 {formatJPY(arr.recurringFees)}(いずれも税抜、初期費用は除く)。
+        {pendingArr.count > 0 &&
+          ` 課金待ち${pendingArr.count}件（${formatJPY(pendingArr.total)}）は未計上。`}
+      </p>
       <div className="flex justify-end">
         <ListSearch
           basePath="/contracts"
