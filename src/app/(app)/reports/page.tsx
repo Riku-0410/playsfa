@@ -55,12 +55,12 @@ export default async function ReportsPage() {
       .not("closed_at", "is", null),
     db
       .from("invoices")
-      .select("due_date, total, status")
+      .select("due_date, issue_date, total, status, contract_id")
       .neq("status", "void"),
     db
       .from("contracts")
       .select(
-        "service, billing_cycle, amount_per_billing, tax_rate, billing_start_date, contract_fees(amount, recurring)",
+        "id, service, billing_cycle, amount_per_billing, tax_rate, billing_start_date, contract_fees(amount, recurring)",
       ),
   ]);
 
@@ -87,57 +87,60 @@ export default async function ReportsPage() {
     billing.set(key, arr);
   }
 
-  // 入金予定 = 未入金請求書の支払期限月別。期限超過はcron未反映分もdue_dateで拾う
+  // 入金予測(解約0%想定) = 未入金の実請求書 + 全契約が更新され続ける前提の将来請求。
+  // 請求書が既にある回はその金額を使い(入金済みは除外)、未生成の回だけ請求書生成と
+  // 同じルール(利用料+契約年度初回の毎年費用、税切り捨て、期限=発行+30日)で「予定」に足す
   const today = todayJST();
+  const thisMonth = today.slice(0, 7);
+  const projEnd = addMonth(thisMonth, 12);
   const unpaid = new Map<string, number[]>();
-  for (const r of invRes.data ?? []) {
-    if (r.status === "paid") continue;
-    const key = r.due_date.slice(0, 7);
+  const addUnpaid = (key: string, si: number, v: number) => {
     const arr = unpaid.get(key) ?? UNPAID_SERIES.map(() => 0);
+    arr[si] += v;
+    unpaid.set(key, arr);
+  };
+  const invoiced = new Set<string>();
+  for (const r of invRes.data ?? []) {
+    if (r.contract_id) invoiced.add(`${r.contract_id}:${r.issue_date}`);
+    if (r.status === "paid") continue;
     const si =
       r.status === "overdue" || r.due_date < today
         ? 0
         : r.status === "scheduled"
           ? 2
           : 1;
-    arr[si] += r.total;
-    unpaid.set(key, arr);
+    addUnpaid(r.due_date.slice(0, 7), si, r.total);
   }
-
-  // 入金予測(解約0%想定): 全契約が更新され続ける前提で、請求書生成と同じルールで
-  // 将来の請求を今月から12ヶ月先まで展開する(支払期限=発行+30日の月で計上、税込)。
-  // 毎年かかる契約費用は契約年度の初回請求に、初期費用は初回請求にのみ載る
-  const thisMonth = today.slice(0, 7);
-  const projEnd = addMonth(thisMonth, 12);
-  const monthKey = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  const projection = new Map<string, number[]>();
+  const pad2 = (n: number) => String(n).padStart(2, "0");
   for (const c of contractRes.data ?? []) {
     const period = c.billing_cycle === "annual" ? 12 : 6;
-    const fees = c.contract_fees ?? [];
-    const recurringFees = sum(fees.filter((f) => f.recurring).map((f) => f.amount));
-    const initialFees = sum(fees.filter((f) => !f.recurring).map((f) => f.amount));
+    const recurringFees = sum(
+      (c.contract_fees ?? []).filter((f) => f.recurring).map((f) => f.amount),
+    );
     const [y, m, d] = c.billing_start_date.split("-").map(Number);
     for (let k = 0; ; k++) {
-      const due = new Date(y, m - 1 + k * period, d + PAYMENT_TERM_DAYS);
-      const key = monthKey(due);
-      if (key > projEnd) break;
-      if (key < thisMonth) continue;
+      // 発行日は請求書生成(date-fnsのaddMonths)と同じ月末クランプで出し、既存請求書と突き合わせる
+      const anchor = new Date(y, m - 1 + k * period, 1);
+      const day = Math.min(
+        d,
+        new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate(),
+      );
+      const issue = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}-${pad2(day)}`;
+      const due = new Date(anchor.getFullYear(), anchor.getMonth(), day + PAYMENT_TERM_DAYS);
+      const dueKey = `${due.getFullYear()}-${pad2(due.getMonth() + 1)}`;
+      if (dueKey > projEnd) break;
+      if (invoiced.has(`${c.id}:${issue}`) || dueKey < thisMonth) continue;
       const subtotal =
-        c.amount_per_billing +
-        ((k * period) % 12 === 0 ? recurringFees : 0) +
-        (k === 0 ? initialFees : 0);
-      const total = subtotal + Math.floor((subtotal * c.tax_rate) / 100);
-      const arr = projection.get(key) ?? SERVICE_SERIES.map(() => 0);
-      arr[SERVICE_SERIES.findIndex((s) => s.key === c.service)] += total;
-      projection.set(key, arr);
+        c.amount_per_billing + ((k * period) % 12 === 0 ? recurringFees : 0);
+      addUnpaid(dueKey, 2, subtotal + Math.floor((subtotal * c.tax_rate) / 100));
     }
   }
-  const projRange: string[] = [];
-  for (let k = thisMonth; k <= projEnd; k = addMonth(k, 1)) projRange.push(k);
-  const projMonths: MonthlyStackedDatum[] = projRange.map((k) => ({
+  const unpaidFirst = [...unpaid.keys()].sort()[0] ?? thisMonth;
+  const unpaidRange: string[] = [];
+  for (let k = unpaidFirst; k <= projEnd; k = addMonth(k, 1)) unpaidRange.push(k);
+  const unpaidMonths: MonthlyStackedDatum[] = unpaidRange.map((k) => ({
     key: k,
-    values: projection.get(k) ?? SERVICE_SERIES.map(() => 0),
+    values: unpaid.get(k) ?? UNPAID_SERIES.map(() => 0),
   }));
 
   // 全チャート共通の月レンジ(比較しやすいよう縦に揃える)
@@ -154,7 +157,6 @@ export default async function ReportsPage() {
   const trialMonths = monthsOf(trials, SERVICE_SERIES.length);
   const wonMonths = monthsOf(won, SERVICE_SERIES.length);
   const billingMonths = monthsOf(billing, 2);
-  const unpaidMonths = monthsOf(unpaid, UNPAID_SERIES.length);
 
   const idxThis = range.indexOf(thisMonth);
   const trialTotals = trialMonths.map((m) => sum(m.values));
@@ -226,23 +228,6 @@ export default async function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>月別入金予測(解約0%想定)</CardTitle>
-          <p className="text-xs text-ink-muted">
-            全契約が更新され続ける前提で、今月から12ヶ月先までの入金額を予測・税込(支払期限月ベース)。毎年かかる契約費用は契約年度初回の請求に含む。解約・終了済みの契約も継続扱い
-          </p>
-        </CardHeader>
-        <CardBody>
-          <MonthlyStackedColumns
-            title="月別入金予測(解約0%想定)"
-            data={projMonths}
-            series={SERVICE_SERIES}
-            money
-          />
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>月別請求額</CardTitle>
           <p className="text-xs text-ink-muted">
             支払期限(締切日)ベース・税込。確定=発行済み〜入金済み、薄い色の予定=未発行分(売上見込)
@@ -260,14 +245,14 @@ export default async function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>月別入金予定</CardTitle>
+          <CardTitle>月別入金予測(解約0%想定)</CardTitle>
           <p className="text-xs text-ink-muted">
-            未入金の請求書を支払期限月で集計・税込(入金済みは除外)。請求済み=発行〜送付済み、薄い色の予定=未発行分、赤=期限超過
+            未入金の請求書に加え、全契約が更新され続ける前提の将来請求(12ヶ月先まで)を支払期限月で集計・税込(入金済みは除外)。請求済み=発行〜送付済み、薄い色の予定=未発行分+更新見込み、赤=期限超過
           </p>
         </CardHeader>
         <CardBody>
           <MonthlyStackedColumns
-            title="月別入金予定"
+            title="月別入金予測(解約0%想定)"
             data={unpaidMonths}
             series={UNPAID_SERIES}
             money
