@@ -81,8 +81,8 @@ export default async function DashboardPage() {
       db
         .from("invoices")
         .select("total")
-        .gte("issue_date", monthStart)
-        .lte("issue_date", monthEnd)
+        .gte("due_date", monthStart)
+        .lte("due_date", monthEnd)
         .neq("status", "void"),
       db
         .from("invoices")
@@ -123,10 +123,12 @@ export default async function DashboardPage() {
 
   const monthTotal = (monthInvoices.data ?? []).reduce((a, r) => a + r.total, 0);
   const unpaidRows = unpaid.data ?? [];
-  const unpaidTotal = unpaidRows.reduce((a, r) => a + r.total, 0);
+  // 期日超過のみを未回収として扱う。ステータス更新は日次バッチ(毎朝7時JST)なので
+  // 実行前でも拾えるよう due_date でもフォールバック判定する
   const overdueRows = unpaidRows.filter(
     (r) => r.status === "overdue" || r.due_date < today,
   );
+  const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const toIssueRows = toIssue.data ?? [];
   const trialRows = trials.data ?? [];
 
@@ -256,7 +258,7 @@ export default async function DashboardPage() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="今月の請求" value={formatJPY(monthTotal)} />
-        <StatCard label="未回収" value={formatJPY(unpaidTotal)} />
+        <StatCard label="未回収(期限超過)" value={formatJPY(unpaidTotal)} />
         <StatCard label="期限超過" value={`${overdueRows.length}件`} />
         <StatCard
           label="課金中の契約"
