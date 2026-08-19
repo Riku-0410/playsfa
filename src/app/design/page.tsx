@@ -10,6 +10,7 @@ import { Field, FieldError, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { ListSearch } from "@/components/ui/list-search";
 import { Meter } from "@/components/ui/meter";
+import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -432,6 +433,27 @@ export default function DesignPage() {
               action={<Button size="sm">商談を追加 →</Button>}
             />
           </Card>
+        </div>
+      </Section>
+
+      <Section title="モーダル">
+        {/* 実物は画面全体に fixed で被さる。transform 付きの枠内に閉じ込めてデモ表示 */}
+        <div className="relative h-96 overflow-hidden rounded-card [transform:translateZ(0)]">
+          <Modal className="max-w-md">
+            <CardHeader>
+              <CardTitle>活動ログを記録</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <p className="text-sm text-ink-secondary">
+                開閉はURLクエリで制御(開く = redirect、閉じる = dismissHref
+                へのリンク)。背景クリックでも閉じる。
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost">スキップ</Button>
+                <Button variant="dark">記録する</Button>
+              </div>
+            </CardBody>
+          </Modal>
         </div>
       </Section>
     </main>

@@ -1,7 +1,7 @@
 import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
 import { Field, FieldHint, Label } from "@/components/ui/field";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { ServiceAmountFields } from "./service-amount-fields";
@@ -19,7 +19,6 @@ type DealDefaults = {
   competitor_expiry?: string | null;
   expected_billing_start?: string | null;
   lost_reason?: string | null;
-  note?: string | null;
 };
 
 export function DealForm({
@@ -191,10 +190,6 @@ export function DealForm({
           placeholder="失注時のみ"
           defaultValue={deal?.lost_reason ?? ""}
         />
-      </Field>
-      <Field>
-        <Label htmlFor="deal-note">メモ</Label>
-        <Textarea id="deal-note" name="note" defaultValue={deal?.note ?? ""} />
       </Field>
       <div className="flex justify-end pt-2">
         <Button type="submit">{submitLabel}</Button>

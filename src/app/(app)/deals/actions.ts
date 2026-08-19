@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { addActivity } from "../customers/actions";
 
 type Stage = "lead" | "contacted" | "trial" | "negotiation" | "won" | "lost";
 type Service = "playcut" | "baskestats";
@@ -20,7 +21,6 @@ function dealValues(formData: FormData) {
     competitor_expiry: str(formData, "competitor_expiry"),
     expected_billing_start: str(formData, "expected_billing_start"),
     lost_reason: str(formData, "lost_reason"),
-    note: str(formData, "note"),
   };
 }
 
@@ -46,7 +46,8 @@ export async function createDeal(formData: FormData) {
     .select("id");
   if (error) throw error;
   revalidatePath("/deals");
-  redirect(data.length === 1 ? `/deals/${data[0].id}` : "/deals");
+  // 作成直後に活動ログ記入モーダルを開く(複数サービス同時作成時は先頭の商談で記入)
+  redirect(`/deals/${data[0].id}?log=1`);
 }
 
 export async function deleteDeal(formData: FormData) {
@@ -77,4 +78,14 @@ export async function updateDeal(formData: FormData) {
   if (error) throw error;
   revalidatePath("/deals");
   revalidatePath(`/deals/${id}`);
+  // 保存後は必ず活動ログ記入モーダルを開く(スキップ可)
+  redirect(`/deals/${id}?log=1`);
+}
+
+/** 商談の作成/保存後モーダルからの活動ログ記録。記録後はモーダルを閉じて商談詳細へ */
+export async function logDealActivity(formData: FormData) {
+  const dealId = requiredStr(formData, "deal_id");
+  await addActivity(formData);
+  revalidatePath(`/deals/${dealId}`);
+  redirect(`/deals/${dealId}`);
 }

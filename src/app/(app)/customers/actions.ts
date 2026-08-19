@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { ACTIVITY_AUTHORS } from "@/lib/activity";
 import { requiredStr, str } from "@/lib/form";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -67,12 +68,17 @@ export async function deleteCustomer(formData: FormData) {
 export async function addActivity(formData: FormData) {
   const db = createAdminClient();
   const customerId = requiredStr(formData, "customer_id");
+  const authorName = requiredStr(formData, "author_name");
+  if (!ACTIVITY_AUTHORS.includes(authorName)) {
+    throw new Error("記入者を選択してください");
+  }
   const { error } = await db.from("activities").insert({
     customer_id: customerId,
     deal_id: str(formData, "deal_id"),
     type: requiredStr(formData, "type") as
       | "call" | "email" | "meeting" | "memo" | "task",
     content: requiredStr(formData, "content"),
+    author_name: authorName,
     next_action: str(formData, "next_action"),
     next_action_date: str(formData, "next_action_date"),
   });

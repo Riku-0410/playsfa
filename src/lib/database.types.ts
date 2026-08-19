@@ -41,6 +41,7 @@ export type Database = {
     Tables: {
       activities: {
         Row: {
+          author_name: string | null
           content: string
           created_at: string
           customer_id: string
@@ -53,6 +54,7 @@ export type Database = {
           type: Database["public"]["Enums"]["activity_type"]
         }
         Insert: {
+          author_name?: string | null
           content: string
           created_at?: string
           customer_id: string
@@ -65,6 +67,7 @@ export type Database = {
           type?: Database["public"]["Enums"]["activity_type"]
         }
         Update: {
+          author_name?: string | null
           content?: string
           created_at?: string
           customer_id?: string
@@ -283,6 +286,38 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      deal_stage_history: {
+        Row: {
+          changed_at: string
+          deal_id: string
+          id: string
+          previous_stage: Database["public"]["Enums"]["deal_stage"] | null
+          stage: Database["public"]["Enums"]["deal_stage"]
+        }
+        Insert: {
+          changed_at?: string
+          deal_id: string
+          id?: string
+          previous_stage?: Database["public"]["Enums"]["deal_stage"] | null
+          stage: Database["public"]["Enums"]["deal_stage"]
+        }
+        Update: {
+          changed_at?: string
+          deal_id?: string
+          id?: string
+          previous_stage?: Database["public"]["Enums"]["deal_stage"] | null
+          stage?: Database["public"]["Enums"]["deal_stage"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_stage_history_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       deals: {
         Row: {

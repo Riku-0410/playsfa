@@ -1,35 +1,80 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ActivityFields } from "@/components/activity-fields";
 import { ConfirmForm } from "@/components/confirm-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
+import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
+import { formatDate } from "@/lib/format";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteDeal, updateDeal } from "../actions";
+import { deleteDeal, logDealActivity, updateDeal } from "../actions";
 import { DealForm } from "../deal-form";
 
 export const dynamic = "force-dynamic";
 
 export default async function DealDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ log?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, { log }] = await Promise.all([params, searchParams]);
   const db = createAdminClient();
-  const [dealRes, customersRes] = await Promise.all([
+  const [dealRes, customersRes, historyRes] = await Promise.all([
     db.from("deals").select("*, customers(id, name)").eq("id", id).single(),
     db.from("customers").select("id, name").order("name"),
+    db
+      .from("deal_stage_history")
+      .select("id, stage, previous_stage, changed_at")
+      .eq("deal_id", id)
+      .order("changed_at", { ascending: false }),
   ]);
   const deal = dealRes.data;
   if (!deal) notFound();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
+      {log === "1" && (
+        <Modal dismissHref={`/deals/${deal.id}`}>
+          <CardHeader>
+            <CardTitle>活動ログを記録</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <p className="mb-4 text-xs text-ink-muted">
+              {deal.customers?.name ?? "この商談"}
+              の商談を保存しました。いま何があったか残しておきましょう。
+            </p>
+            <form action={logDealActivity} className="space-y-3">
+              <input type="hidden" name="customer_id" value={deal.customer_id} />
+              <input type="hidden" name="deal_id" value={deal.id} />
+              <ActivityFields
+                actions={
+                  <>
+                    <Link href={`/deals/${deal.id}`} scroll={false}>
+                      <Button type="button" variant="ghost">スキップ</Button>
+                    </Link>
+                    <Button type="submit" variant="dark">記録する</Button>
+                  </>
+                }
+              />
+            </form>
+          </CardBody>
+        </Modal>
+      )}
       <PageHeader
-        title={deal.customers?.name ?? "商談"}
+        title={
+          deal.customers ? (
+            <Link href={`/customers/${deal.customers.id}`} className="hover:underline">
+              {deal.customers.name}
+            </Link>
+          ) : (
+            "商談"
+          )
+        }
         description={deal.title ?? undefined}
         actions={
           <>
@@ -72,6 +117,36 @@ export default async function DealDetailPage({
           />
         </CardBody>
       </Card>
+
+      {(historyRes.data ?? []).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>ステージ履歴</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <ul className="space-y-3">
+              {(historyRes.data ?? []).map((h) => (
+                <li key={h.id} className="flex items-center gap-3 text-sm">
+                  <span className="w-32 shrink-0 text-xs text-ink-muted">
+                    {formatDate(h.changed_at)}
+                  </span>
+                  {h.previous_stage && (
+                    <>
+                      <span className="text-ink-muted">
+                        {DEAL_STAGES[h.previous_stage].label}
+                      </span>
+                      <span className="text-xs text-ink-muted">→</span>
+                    </>
+                  )}
+                  <Badge variant={DEAL_STAGES[h.stage].badge} dot>
+                    {DEAL_STAGES[h.stage].label}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      )}
 
       <Card className="border border-critical/30">
         <CardBody className="flex items-center justify-between gap-4 py-5">

@@ -1,14 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { ActivityFields } from "@/components/activity-fields";
 import { ConfirmForm } from "@/components/confirm-form";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Field, Label } from "@/components/ui/field";
-import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { ACTIVITY_TYPES } from "@/lib/activity";
 import { formatDate, formatJPY } from "@/lib/format";
 import {
   BILLING_CYCLES,
@@ -21,14 +21,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { addActivity, deleteActivity } from "../actions";
 
 export const dynamic = "force-dynamic";
-
-const ACTIVITY_TYPES: Record<string, string> = {
-  memo: "メモ",
-  call: "架電",
-  email: "メール",
-  meeting: "商談",
-  task: "タスク",
-};
 
 export default async function CustomerDetailPage({
   params,
@@ -216,39 +208,9 @@ export default async function CustomerDetailPage({
         <CardBody className="space-y-5">
           <form action={addActivity} className="space-y-3">
             <input type="hidden" name="customer_id" value={customer.id} />
-            <div className="flex gap-3">
-              <Field className="w-36 shrink-0">
-                <Label htmlFor="act-type">種類</Label>
-                <Select id="act-type" name="type" defaultValue="memo">
-                  {Object.entries(ACTIVITY_TYPES).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field className="flex-1">
-                <Label htmlFor="act-content">内容</Label>
-                <Textarea
-                  id="act-content"
-                  name="content"
-                  required
-                  className="min-h-11 h-11 py-2.5"
-                  placeholder="電話で状況ヒアリング。競合の更新月は来年3月…"
-                />
-              </Field>
-            </div>
-            <div className="flex items-end justify-between gap-3">
-              <div className="flex flex-1 gap-3">
-                <Field className="flex-1">
-                  <Label htmlFor="act-next">次のアクション</Label>
-                  <Input id="act-next" name="next_action" placeholder="デモ日程の調整" />
-                </Field>
-                <Field className="w-40 shrink-0">
-                  <Label htmlFor="act-next-date">期日</Label>
-                  <Input id="act-next-date" name="next_action_date" type="date" />
-                </Field>
-              </div>
-              <Button type="submit" variant="dark">記録する</Button>
-            </div>
+            <ActivityFields
+              actions={<Button type="submit" variant="dark">記録する</Button>}
+            />
           </form>
 
           {activities.length === 0 ? (
@@ -264,6 +226,7 @@ export default async function CustomerDetailPage({
                     <p className="text-sm whitespace-pre-wrap">{a.content}</p>
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {formatDate(a.occurred_at)}
+                      {a.author_name && ` ・記入: ${a.author_name}`}
                       {a.next_action && (
                         <>
                           {" ・次: "}
