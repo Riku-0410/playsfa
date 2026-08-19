@@ -9,7 +9,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
-import { formatJPY } from "@/lib/format";
+import { formatDateShort, formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -23,6 +23,7 @@ const SORTS = {
   trial_end: "trial_end",
   competitor_expiry: "competitor_expiry",
   created: "created_at",
+  updated: "updated_at",
 };
 
 export default async function DealsPage({
@@ -30,13 +31,16 @@ export default async function DealsPage({
 }: {
   searchParams: Promise<{
     stage?: string;
+    service?: string;
     q?: string;
     page?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
-  const { stage, q: rawQ, ...raw } = await searchParams;
+  const { stage, service, q: rawQ, ...raw } = await searchParams;
+  const activeStage = stage && stage in DEAL_STAGES ? stage : undefined;
+  const activeService = service && service in SERVICES ? service : undefined;
   const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
@@ -47,23 +51,32 @@ export default async function DealsPage({
   let query = db
     .from("deals")
     .select(
-      "id, service, stage, title, amount_expected, trial_end, competitor, competitor_expiry, customers!inner(id, name)",
+      "id, service, stage, title, amount_expected, trial_end, competitor, competitor_expiry, created_at, updated_at, customers!inner(id, name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
-  if (stage && stage in DEAL_STAGES) {
-    query = query.eq("stage", stage as keyof typeof DEAL_STAGES);
+  if (activeStage) {
+    query = query.eq("stage", activeStage as keyof typeof DEAL_STAGES);
+  }
+  if (activeService) {
+    query = query.eq("service", activeService as keyof typeof SERVICES);
   }
   if (q) query = query.ilike("customers.name", `%${q}%`);
   const { data: deals, count } = await query;
   const total = count ?? 0;
 
-  const keptParams = { stage, q: q ?? undefined, sort: raw.sort, dir: raw.dir };
+  const keptParams = {
+    stage: activeStage,
+    service: activeService,
+    q: q ?? undefined,
+    sort: raw.sort,
+    dir: raw.dir,
+  };
   const sortProps = {
     basePath: "/deals",
-    params: { stage, q: q ?? undefined },
+    params: { stage: activeStage, service: activeService, q: q ?? undefined },
     sort: sortKey,
     dir,
   };
@@ -83,10 +96,15 @@ export default async function DealsPage({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
           <Link
-            href={listHref("/deals", { q: q ?? undefined, sort: raw.sort, dir: raw.dir })}
+            href={listHref("/deals", {
+              service: activeService,
+              q: q ?? undefined,
+              sort: raw.sort,
+              dir: raw.dir,
+            })}
             className={cn(
               "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
-              !stage
+              !activeStage
                 ? "bg-night text-night-ink"
                 : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
             )}
@@ -98,13 +116,52 @@ export default async function DealsPage({
               key={k}
               href={listHref("/deals", {
                 stage: k,
+                service: activeService,
                 q: q ?? undefined,
                 sort: raw.sort,
                 dir: raw.dir,
               })}
               className={cn(
                 "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
-                stage === k
+                activeStage === k
+                  ? "bg-night text-night-ink"
+                  : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
+              )}
+            >
+              {v.label}
+            </Link>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={listHref("/deals", {
+              stage: activeStage,
+              q: q ?? undefined,
+              sort: raw.sort,
+              dir: raw.dir,
+            })}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
+              !activeService
+                ? "bg-night text-night-ink"
+                : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
+            )}
+          >
+            全サービス
+          </Link>
+          {Object.entries(SERVICES).map(([k, v]) => (
+            <Link
+              key={k}
+              href={listHref("/deals", {
+                stage: activeStage,
+                service: k,
+                q: q ?? undefined,
+                sort: raw.sort,
+                dir: raw.dir,
+              })}
+              className={cn(
+                "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
+                activeService === k
                   ? "bg-night text-night-ink"
                   : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
               )}
@@ -117,7 +174,7 @@ export default async function DealsPage({
           basePath="/deals"
           q={rawQ}
           placeholder="顧客名で検索…"
-          params={{ stage, sort: raw.sort, dir: raw.dir }}
+          params={{ stage: activeStage, service: activeService, sort: raw.sort, dir: raw.dir }}
         />
       </div>
 
@@ -164,6 +221,8 @@ export default async function DealsPage({
                     sortKey="competitor_expiry"
                     {...sortProps}
                   />
+                  <SortableTH label="作成日" sortKey="created" {...sortProps} />
+                  <SortableTH label="更新日" sortKey="updated" {...sortProps} />
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +252,12 @@ export default async function DealsPage({
                     <TD className="text-ink-secondary">{d.competitor ?? "—"}</TD>
                     <TD className="text-ink-secondary">
                       {d.competitor_expiry ?? "—"}
+                    </TD>
+                    <TD className="text-ink-secondary">
+                      {formatDateShort(d.created_at)}
+                    </TD>
+                    <TD className="text-ink-secondary">
+                      {formatDateShort(d.updated_at)}
                     </TD>
                   </TR>
                 ))}
