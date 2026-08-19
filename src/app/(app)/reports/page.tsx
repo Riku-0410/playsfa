@@ -6,7 +6,7 @@ import {
   MonthlyStackedColumns,
   type MonthlyStackedDatum,
 } from "@/components/monthly-stacked-columns";
-import { contractArr } from "@/lib/arr";
+import { PAYMENT_TERM_DAYS } from "@/lib/billing";
 import { todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { SERVICES } from "@/lib/status";
@@ -60,7 +60,7 @@ export default async function ReportsPage() {
     db
       .from("contracts")
       .select(
-        "service, billing_cycle, amount_per_billing, billing_start_date, contract_fees(amount, recurring)",
+        "service, billing_cycle, amount_per_billing, tax_rate, billing_start_date, contract_fees(amount, recurring)",
       ),
   ]);
 
@@ -104,23 +104,44 @@ export default async function ReportsPage() {
     unpaid.set(key, arr);
   }
 
-  // ARRの月別増加分(課金開始月ベース)。解約0%想定なので churned/ended も継続扱い
-  const arrAdded = new Map<string, number[]>();
+  // 入金予測(解約0%想定): 全契約が更新され続ける前提で、請求書生成と同じルールで
+  // 将来の請求を今月から12ヶ月先まで展開する(支払期限=発行+30日の月で計上、税込)。
+  // 毎年かかる契約費用は契約年度の初回請求に、初期費用は初回請求にのみ載る
+  const thisMonth = today.slice(0, 7);
+  const projEnd = addMonth(thisMonth, 12);
+  const monthKey = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const projection = new Map<string, number[]>();
   for (const c of contractRes.data ?? []) {
-    const key = c.billing_start_date.slice(0, 7);
-    const arr = arrAdded.get(key) ?? SERVICE_SERIES.map(() => 0);
-    arr[SERVICE_SERIES.findIndex((s) => s.key === c.service)] += contractArr(c);
-    arrAdded.set(key, arr);
+    const period = c.billing_cycle === "annual" ? 12 : 6;
+    const fees = c.contract_fees ?? [];
+    const recurringFees = sum(fees.filter((f) => f.recurring).map((f) => f.amount));
+    const initialFees = sum(fees.filter((f) => !f.recurring).map((f) => f.amount));
+    const [y, m, d] = c.billing_start_date.split("-").map(Number);
+    for (let k = 0; ; k++) {
+      const due = new Date(y, m - 1 + k * period, d + PAYMENT_TERM_DAYS);
+      const key = monthKey(due);
+      if (key > projEnd) break;
+      if (key < thisMonth) continue;
+      const subtotal =
+        c.amount_per_billing +
+        ((k * period) % 12 === 0 ? recurringFees : 0) +
+        (k === 0 ? initialFees : 0);
+      const total = subtotal + Math.floor((subtotal * c.tax_rate) / 100);
+      const arr = projection.get(key) ?? SERVICE_SERIES.map(() => 0);
+      arr[SERVICE_SERIES.findIndex((s) => s.key === c.service)] += total;
+      projection.set(key, arr);
+    }
   }
+  const projRange: string[] = [];
+  for (let k = thisMonth; k <= projEnd; k = addMonth(k, 1)) projRange.push(k);
+  const projMonths: MonthlyStackedDatum[] = projRange.map((k) => ({
+    key: k,
+    values: projection.get(k) ?? SERVICE_SERIES.map(() => 0),
+  }));
 
   // 全チャート共通の月レンジ(比較しやすいよう縦に揃える)
-  const thisMonth = today.slice(0, 7);
-  const allKeys = [
-    ...trials.keys(),
-    ...won.keys(),
-    ...billing.keys(),
-    ...arrAdded.keys(),
-  ].sort();
+  const allKeys = [...trials.keys(), ...won.keys(), ...billing.keys()].sort();
   const first = allKeys[0] ?? thisMonth;
   const last = allKeys[allKeys.length - 1] ?? thisMonth;
   const end = last > thisMonth ? last : thisMonth;
@@ -134,14 +155,6 @@ export default async function ReportsPage() {
   const wonMonths = monthsOf(won, SERVICE_SERIES.length);
   const billingMonths = monthsOf(billing, 2);
   const unpaidMonths = monthsOf(unpaid, UNPAID_SERIES.length);
-
-  // 累積ARR = 各月までの増加分の積み上げ
-  const running = SERVICE_SERIES.map(() => 0);
-  const arrMonths: MonthlyStackedDatum[] = range.map((k) => {
-    const added = arrAdded.get(k);
-    if (added) added.forEach((v, i) => (running[i] += v));
-    return { key: k, values: [...running] };
-  });
 
   const idxThis = range.indexOf(thisMonth);
   const trialTotals = trialMonths.map((m) => sum(m.values));
@@ -213,15 +226,15 @@ export default async function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>ARR積み上がり(解約0%想定)</CardTitle>
+          <CardTitle>月別入金予測(解約0%想定)</CardTitle>
           <p className="text-xs text-ink-muted">
-            課金開始月ベースの累積ARR・税抜(利用料の年換算+毎年かかる契約費用)。解約・終了した契約も継続する想定で積み上げ。将来開始のpending契約も開始月から反映
+            全契約が更新され続ける前提で、今月から12ヶ月先までの入金額を予測・税込(支払期限月ベース)。毎年かかる契約費用は契約年度初回の請求に含む。解約・終了済みの契約も継続扱い
           </p>
         </CardHeader>
         <CardBody>
           <MonthlyStackedColumns
-            title="ARR積み上がり(解約0%想定)"
-            data={arrMonths}
+            title="月別入金予測(解約0%想定)"
+            data={projMonths}
             series={SERVICE_SERIES}
             money
           />

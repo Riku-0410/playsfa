@@ -30,7 +30,7 @@ export type ArrBreakdown = {
  * 契約1件の年間収益。利用料の年換算 + 毎年かかる契約費用。
  * 初期費用(recurring=false)は繰り返さないのでARRに含めない。
  */
-export function contractArr(c: ArrContract): number {
+function contractArr(c: ArrContract): number {
   const usage = c.amount_per_billing * BILLINGS_PER_YEAR[c.billing_cycle];
   const fees = (c.contract_fees ?? [])
     .filter((f) => f.recurring)
