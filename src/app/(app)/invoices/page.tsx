@@ -314,6 +314,11 @@ export default async function InvoicesPage({
                           <Link href={`/invoices/${inv.id}/print`}>
                             <Button size="sm" variant="ghost">表示</Button>
                           </Link>
+                          {inv.status === "paid" && (
+                            <Link href={`/invoices/${inv.id}/receipt`}>
+                              <Button size="sm" variant="ghost">領収書</Button>
+                            </Link>
+                          )}
                           <Link href={`/invoices/${inv.id}/edit`}>
                             <Button size="sm" variant="ghost">編集</Button>
                           </Link>
