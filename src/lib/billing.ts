@@ -110,3 +110,18 @@ export function computeInvoiceSchedule(input: {
     };
   });
 }
+
+/** 契約終了日 = 課金開始日 + 契約月数 − 1日 */
+export const contractEndDate = (billingStart: string, termMonths: number) =>
+  fmt(addDays(addMonths(parseDate(billingStart), termMonths), -1));
+
+/** 次期の課金開始日 = 課金開始日 + 契約月数(終了日の翌日) */
+export const nextTermStart = (billingStart: string, termMonths: number) =>
+  fmt(addMonths(parseDate(billingStart), termMonths));
+
+/** 契約終了日が「今月〜翌月」にあるか、もう過ぎているか(更新か満了かを決める時期) */
+export function isEndingSoon(endDate: string, today: string): boolean {
+  const [y, m] = today.split("-").map(Number);
+  const nextMonthEnd = fmt(endOfMonth(new Date(y, m, 1)));
+  return endDate <= nextMonthEnd;
+}

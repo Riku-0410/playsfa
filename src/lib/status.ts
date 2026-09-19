@@ -21,6 +21,7 @@ export const CONTRACT_STATUSES = {
   pending: { label: "課金待ち", badge: "warn" },
   active: { label: "課金中", badge: "good" },
   ended: { label: "満了", badge: "neutral" },
+  /** 旧ステータス。画面からは選べない(終了は満了に一本化)。過去データの表示用に残す */
   churned: { label: "解約", badge: "critical" },
 } satisfies Record<string, StatusMeta>;
 

@@ -8,6 +8,7 @@ import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/u
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { contractEndDate } from "@/lib/billing";
 import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -34,9 +35,16 @@ export default async function EditContractPage({
       <PageHeader
         title={`${contract.customers?.name} の契約を編集`}
         actions={
-          <Badge variant={SERVICES[contract.service].badge} dot>
-            {SERVICES[contract.service].label}
-          </Badge>
+          <>
+            <Badge variant={SERVICES[contract.service].badge} dot>
+              {SERVICES[contract.service].label}
+            </Badge>
+            {["active", "ended"].includes(contract.status) && (
+              <Link href={`/contracts/${contract.id}/renew`}>
+                <Button variant="outline">契約を更新 →</Button>
+              </Link>
+            )}
+          </>
         }
       />
 
@@ -45,10 +53,13 @@ export default async function EditContractPage({
         <span className="font-semibold">
           {formatJPY(contract.amount_per_billing)}/回(税抜)
         </span>
-        <span>課金開始 {contract.billing_start_date}</span>
+        <span>
+          契約期間 {contract.billing_start_date} 〜{" "}
+          {contractEndDate(contract.billing_start_date, contract.term_months)}
+        </span>
         <span className="text-xs text-ink-muted">
           金額・サイクル・課金開始は請求書が生成済みのため変更不可。
-          調整は各請求書の編集で、作り直しは削除→再登録で。
+          更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で、作り直しは削除→再登録で。
         </span>
       </CardInset>
 
@@ -86,11 +97,14 @@ export default async function EditContractPage({
                 name="status"
                 defaultValue={contract.status}
               >
-                {Object.entries(CONTRACT_STATUSES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
+                {Object.entries(CONTRACT_STATUSES)
+                  // 「解約」は画面からは選ばない(終了は「満了」に一本化)。過去データが解約なら表示だけ残す
+                  .filter(([k]) => k !== "churned" || contract.status === "churned")
+                  .map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
               </Select>
-              <FieldHint>「解約」にすると未発行の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
+              <FieldHint>更新されなかった契約は「満了」に。期の途中で終わった場合も同じです。未発行の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
             </Field>
             <Field>
               <Label htmlFor="ce-note">メモ</Label>

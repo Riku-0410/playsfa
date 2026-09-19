@@ -8,10 +8,13 @@ import { Meter } from "@/components/ui/meter";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
+import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { ConfirmForm } from "@/components/confirm-form";
+import { endContract } from "./contracts/actions";
 import { registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
@@ -76,7 +79,7 @@ export default async function DashboardPage() {
   const soon = addDaysJST(14);
   const [ty, tm, td] = today.split("-").map(Number);
 
-  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes] =
+  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows] =
     await Promise.all([
       db
         .from("invoices")
@@ -119,7 +122,21 @@ export default async function DashboardPage() {
         .from("customers")
         .select("owner_name")
         .not("owner_name", "is", null),
+      // 契約終了日はDB列にないので課金中を全件引いてJSで絞る(件数は少ない)
+      db
+        .from("contracts")
+        .select("id, service, billing_start_date, term_months, customers(name)")
+        .eq("status", "active"),
     ]);
+
+  // 契約期間の終了が今月〜翌月、または過ぎているのに課金中 = 更新か満了かを決める対象
+  const endingRows = (activeRows.data ?? [])
+    .map((c) => ({
+      ...c,
+      endDate: contractEndDate(c.billing_start_date, c.term_months),
+    }))
+    .filter((c) => isEndingSoon(c.endDate, today))
+    .sort((a, b) => a.endDate.localeCompare(b.endDate));
 
   const monthTotal = (monthInvoices.data ?? []).reduce((a, r) => a + r.total, 0);
   // 今月の入金残 = 期限が今月でまだ入金されていない分(未発行のscheduledも含む)
@@ -350,6 +367,74 @@ export default async function DashboardPage() {
           )}
         </Card>
       </div>
+
+      {endingRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>契約期間の終了が近い契約</CardTitle>
+              <p className="mt-1 text-xs text-ink-muted">
+                更新されたら「更新」で次期の請求書を生成、されなければ「満了にする」。放置すると入金予測に更新前提で数え続けられます
+              </p>
+            </div>
+            <Link href="/contracts">
+              <Button variant="outline" size="sm">契約一覧 →</Button>
+            </Link>
+          </CardHeader>
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>顧客</TH>
+                  <TH>サービス</TH>
+                  <TH>契約終了</TH>
+                  <TH>アクション</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {endingRows.map((c) => (
+                  <TR key={c.id}>
+                    <TD className="font-semibold">{c.customers?.name}</TD>
+                    <TD>
+                      <Badge variant={SERVICES[c.service].badge} dot>
+                        {SERVICES[c.service].label}
+                      </Badge>
+                    </TD>
+                    <TD
+                      className={
+                        c.endDate < today
+                          ? "font-semibold text-critical-deep"
+                          : "font-semibold text-warn-deep"
+                      }
+                    >
+                      {c.endDate}
+                      {c.endDate < today && (
+                        <span className="ml-1 text-xs">終了済み</span>
+                      )}
+                    </TD>
+                    <TD>
+                      <div className="flex gap-1.5">
+                        <Link href={`/contracts/${c.id}/renew`}>
+                          <Button size="sm">更新</Button>
+                        </Link>
+                        <ConfirmForm
+                          action={endContract}
+                          message="この契約を「満了」にします。未発行の請求書があれば無効化されます。よろしいですか？"
+                        >
+                          <input type="hidden" name="id" value={c.id} />
+                          <Button size="sm" variant="ghost" type="submit">
+                            満了にする
+                          </Button>
+                        </ConfirmForm>
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       {overdueRows.length > 0 && (
         <Card>

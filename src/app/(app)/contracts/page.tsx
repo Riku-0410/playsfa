@@ -10,6 +10,9 @@ import { SortableTH } from "@/components/ui/sortable-th";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { calcArr } from "@/lib/arr";
+import { contractEndDate } from "@/lib/billing";
+import { cn } from "@/lib/cn";
+import { todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { parseListParams, searchQuery } from "@/lib/list-params";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
@@ -43,6 +46,7 @@ export default async function ContractsPage({
     defaultSort: "billing_start",
   });
   const db = createAdminClient();
+  const today = todayJST();
   let query = db
     .from("contracts")
     .select(
@@ -155,12 +159,17 @@ export default async function ContractsPage({
                     sortKey="billing_start"
                     {...sortProps}
                   />
+                  <TH>契約終了</TH>
                   <SortableTH label="ステータス" sortKey="status" {...sortProps} />
                   <TH />
                 </tr>
               </thead>
               <tbody>
-                {contracts.map((c) => (
+                {contracts.map((c) => {
+                  const endDate = contractEndDate(c.billing_start_date, c.term_months);
+                  // 終了日を過ぎても課金中 = 更新か満了かが未処理
+                  const expired = c.status === "active" && endDate < today;
+                  return (
                   <TR key={c.id}>
                     <TD className="font-semibold">
                       <Link
@@ -185,18 +194,37 @@ export default async function ContractsPage({
                     <TD className="text-ink-secondary">
                       {c.billing_start_date}
                     </TD>
+                    <TD
+                      className={cn(
+                        "text-ink-secondary",
+                        expired && "font-semibold text-critical-deep",
+                      )}
+                    >
+                      {endDate}
+                      {expired && (
+                        <span className="ml-1 text-xs">(要更新/満了)</span>
+                      )}
+                    </TD>
                     <TD>
                       <Badge variant={CONTRACT_STATUSES[c.status].badge} dot>
                         {CONTRACT_STATUSES[c.status].label}
                       </Badge>
                     </TD>
                     <TD>
-                      <Link href={`/contracts/${c.id}/edit`}>
-                        <Button size="sm" variant="ghost">編集</Button>
-                      </Link>
+                      <div className="flex gap-1.5">
+                        {["active", "ended"].includes(c.status) && (
+                          <Link href={`/contracts/${c.id}/renew`}>
+                            <Button size="sm" variant="outline">更新</Button>
+                          </Link>
+                        )}
+                        <Link href={`/contracts/${c.id}/edit`}>
+                          <Button size="sm" variant="ghost">編集</Button>
+                        </Link>
+                      </div>
                     </TD>
                   </TR>
-                ))}
+                  );
+                })}
               </tbody>
             </Table>
             <Pagination

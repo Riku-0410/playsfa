@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { BillingCycle } from "@/lib/billing";
-import { createContractWithInvoices } from "@/lib/contracts";
+import { createContractWithInvoices, renewContract as renewContractRecord } from "@/lib/contracts";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import {
@@ -53,7 +53,7 @@ export async function createContract(formData: FormData) {
 
 /**
  * 契約の編集。金額・課金開始・サイクルは請求書が生成済みのため変更不可。
- * 解約に変えたときは未発行の請求を止める(その契約だけの請求書は無効化、相乗りは行を落とす)。
+ * 満了・解約に変えたときは未発行の請求を止める(その契約だけの請求書は無効化、相乗りは行を落とす)。
  */
 export async function updateContract(formData: FormData) {
   const db = createAdminClient();
@@ -67,7 +67,8 @@ export async function updateContract(formData: FormData) {
     .single();
   if (fetchError) throw fetchError;
 
-  const churning = status === "churned" && before.status !== "churned";
+  const stopped = (st: string) => st === "churned" || st === "ended";
+  const stopping = stopped(status) && !stopped(before.status);
   const { error } = await db
     .from("contracts")
     .update({
@@ -80,7 +81,7 @@ export async function updateContract(formData: FormData) {
     })
     .eq("id", id);
   if (error) throw error;
-  if (churning) await dropContractFromScheduled(db, id, "void");
+  if (stopping) await dropContractFromScheduled(db, id, "void");
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/");
@@ -124,4 +125,41 @@ export async function deleteContract(formData: FormData) {
   revalidatePath("/invoices");
   revalidatePath("/");
   redirect("/contracts");
+}
+
+/** 契約の更新。期間を延ばして次期分の請求書を生成する(契約レコードは増やさない) */
+export async function renewContract(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const amount = num(formData, "amount_per_billing");
+  if (!amount || amount <= 0) throw new Error("請求額が不正です");
+  await renewContractRecord(db, {
+    id,
+    plan_name: str(formData, "plan_name"),
+    billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
+    amount_per_billing: amount,
+    agreement_date: requiredStr(formData, "agreement_date"),
+  });
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/reports");
+  revalidatePath("/");
+  redirect(`/invoices?contract=${id}`);
+}
+
+/** 更新されなかった契約を満了にする。未発行の請求書は残っていない前提(残っていれば無効化) */
+export async function endContract(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const { error } = await db
+    .from("contracts")
+    .update({ status: "ended" })
+    .eq("id", id)
+    .in("status", ["active", "pending"]);
+  if (error) throw error;
+  await dropContractFromScheduled(db, id, "void");
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/reports");
+  revalidatePath("/");
 }

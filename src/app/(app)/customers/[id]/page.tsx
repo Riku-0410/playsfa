@@ -9,6 +9,7 @@ import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/u
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { ACTIVITY_TYPES } from "@/lib/activity";
+import { contractEndDate } from "@/lib/billing";
 import { formatDate, formatJPY } from "@/lib/format";
 import {
   BILLING_CYCLES,
@@ -40,7 +41,7 @@ export default async function CustomerDetailPage({
         .order("created_at", { ascending: false }),
       db
         .from("contracts")
-        .select("id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, status")
+        .select("id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status")
         .eq("customer_id", id)
         .order("created_at", { ascending: false }),
       db
@@ -188,7 +189,7 @@ export default async function CustomerDetailPage({
                       </span>
                     </span>
                     <span className="flex items-center gap-3 text-xs text-ink-muted">
-                      課金開始 {c.billing_start_date}
+                      {c.billing_start_date} 〜 {contractEndDate(c.billing_start_date, c.term_months)}
                       <Badge variant={CONTRACT_STATUSES[c.status].badge} dot>
                         {CONTRACT_STATUSES[c.status].label}
                       </Badge>
