@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { BillingCycle } from "@/lib/billing";
 import { createContractWithInvoices } from "@/lib/contracts";
+import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
+import {
+  dropContractFromScheduled,
+  hasInvoiceWithStatus,
+  invoiceIdsOfContract,
+} from "@/lib/invoices";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function parseFees(formData: FormData) {
@@ -45,39 +51,77 @@ export async function createContract(formData: FormData) {
   redirect(`/invoices?contract=${contractId}`);
 }
 
-/** 契約の編集。金額・課金開始・サイクルは請求書が生成済みのため変更不可 */
+/**
+ * 契約の編集。金額・課金開始・サイクルは請求書が生成済みのため変更不可。
+ * 解約に変えたときは未発行の請求を止める(その契約だけの請求書は無効化、相乗りは行を落とす)。
+ */
 export async function updateContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
+  const status = requiredStr(formData, "status") as
+    | "pending" | "active" | "ended" | "churned";
+  const { data: before, error: fetchError } = await db
+    .from("contracts")
+    .select("status, churned_at")
+    .eq("id", id)
+    .single();
+  if (fetchError) throw fetchError;
+
+  const churning = status === "churned" && before.status !== "churned";
   const { error } = await db
     .from("contracts")
     .update({
       plan_name: str(formData, "plan_name"),
       agreement_date: requiredStr(formData, "agreement_date"),
-      status: requiredStr(formData, "status") as
-        | "pending" | "active" | "ended" | "churned",
+      status,
+      churned_at:
+        status === "churned" ? (before.churned_at ?? todayJST()) : null,
       note: str(formData, "note"),
     })
     .eq("id", id);
   if (error) throw error;
+  if (churning) await dropContractFromScheduled(db, id, "void");
   revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/");
 }
 
-/** 契約の削除。請求書もカスケードで消えるため、入金済みがあればブロック */
+/**
+ * 契約の削除。請求書は明細経由で紐づくので明示的に消す。
+ * 入金済みがあればブロック。未発行の相乗り請求書はこの契約の行だけ落とす。
+ * 発行済みの請求書はその契約だけのものなら削除、相乗りなら票面を変えずに残す(行の契約IDはnullになる)。
+ */
 export async function deleteContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
-  const { count } = await db
-    .from("invoices")
-    .select("id", { count: "exact", head: true })
-    .eq("contract_id", id)
-    .eq("status", "paid");
-  if (count && count > 0) {
+  if (await hasInvoiceWithStatus(db, id, "paid")) {
     throw new Error("入金済みの請求書がある契約は削除できません");
   }
+  await dropContractFromScheduled(db, id, "delete");
+
+  // 発行済み・無効などで残った請求書のうち、この契約だけのものは削除
+  const remaining = await invoiceIdsOfContract(db, id);
+  if (remaining.length > 0) {
+    const { data: rows } = await db
+      .from("invoice_items")
+      .select("invoice_id, contract_id")
+      .in("invoice_id", remaining);
+    const solo = remaining.filter(
+      (invId) =>
+        !(rows ?? []).some(
+          (r) => r.invoice_id === invId && r.contract_id && r.contract_id !== id,
+        ),
+    );
+    if (solo.length > 0) {
+      const { error } = await db.from("invoices").delete().in("id", solo);
+      if (error) throw error;
+    }
+  }
+
   const { error } = await db.from("contracts").delete().eq("id", id);
   if (error) throw error;
   revalidatePath("/contracts");
   revalidatePath("/invoices");
+  revalidatePath("/");
   redirect("/contracts");
 }

@@ -47,7 +47,7 @@ function sum(values: number[]): number {
 
 export default async function ReportsPage() {
   const db = createAdminClient();
-  const [trialRes, wonRes, invRes, contractRes] = await Promise.all([
+  const [trialRes, wonRes, invRes, contractRes, itemRes] = await Promise.all([
     db.from("deals").select("trial_start, service").not("trial_start", "is", null),
     db
       .from("deals")
@@ -56,13 +56,23 @@ export default async function ReportsPage() {
       .not("closed_at", "is", null),
     db
       .from("invoices")
-      .select("due_date, issue_date, total, status, contract_id")
+      .select("due_date, issue_date, total, status")
       .neq("status", "void"),
+    // 解約0%想定の将来請求は、いま生きている契約(課金中・課金待ち)だけを伸ばす
     db
       .from("contracts")
       .select(
         "id, service, billing_cycle, amount_per_billing, tax_rate, billing_start_date, contract_fees(amount, recurring)",
-      ),
+      )
+      .in("status", ["active", "pending"]),
+    // 「契約のどの回が請求済みか」は利用料の明細行(契約ID + 期間開始)で見る。
+    // まとめ請求で請求書の発行日が契約の回とずれても、行の期間で正しく突き合う
+    db
+      .from("invoice_items")
+      .select("contract_id, period_start, invoices!inner(status)")
+      .not("contract_id", "is", null)
+      .not("period_start", "is", null)
+      .neq("invoices.status", "void"),
   ]);
 
   // 月キー → 系列順の値
@@ -100,9 +110,10 @@ export default async function ReportsPage() {
     arr[si] += v;
     unpaid.set(key, arr);
   };
-  const invoiced = new Set<string>();
+  const invoiced = new Set(
+    (itemRes.data ?? []).map((r) => `${r.contract_id}:${r.period_start}`),
+  );
   for (const r of invRes.data ?? []) {
-    if (r.contract_id) invoiced.add(`${r.contract_id}:${r.issue_date}`);
     const si =
       r.status === "paid"
         ? 0

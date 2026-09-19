@@ -18,11 +18,13 @@ import { ConfirmForm } from "@/components/confirm-form";
 import {
   issueInvoice,
   markSent,
+  mergeInvoices,
   registerPayment,
   unissueInvoice,
   unpayInvoice,
   unsendInvoice,
 } from "./actions";
+import { MergeCheckbox, MergeProvider, MergeToolbar } from "./merge-select";
 
 export const dynamic = "force-dynamic";
 
@@ -66,10 +68,20 @@ export default async function InvoicesPage({
   const db = createAdminClient();
   const today = format(new Date(), "yyyy-MM-dd");
 
+  // 契約フィルタは明細経由(請求書は複数契約を載せられる)
+  let contractInvoiceIds: string[] | null = null;
+  if (contract) {
+    const { data } = await db
+      .from("invoice_items")
+      .select("invoice_id")
+      .eq("contract_id", contract);
+    contractInvoiceIds = [...new Set((data ?? []).map((r) => r.invoice_id))];
+  }
+
   let query = db
     .from("invoices")
     .select(
-      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers!inner(id, name), contracts(service)",
+      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers!inner(id, name), invoice_items(contract_id, contracts(service))",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -80,7 +92,7 @@ export default async function InvoicesPage({
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
-  if (contract) query = query.eq("contract_id", contract);
+  if (contractInvoiceIds) query = query.in("id", contractInvoiceIds);
   if (q) query = query.ilike("customers.name", `%${q}%`);
   const { data: invoices, count } = await query;
   const total = count ?? 0;
@@ -106,7 +118,7 @@ export default async function InvoicesPage({
         description={
           contract
             ? "この契約の請求書(自動生成されたスケジュール)"
-            : `${total}件`
+            : `${total}件 ・ 同じ顧客の未発行請求書は選択して1枚にまとめられます`
         }
         actions={
           contract ? (
@@ -164,6 +176,7 @@ export default async function InvoicesPage({
         />
       </div>
 
+      <MergeProvider>
       <Card>
         {!invoices?.length ? (
           q ? (
@@ -187,6 +200,7 @@ export default async function InvoicesPage({
             <Table>
               <thead>
                 <tr>
+                  <TH className="w-8" />
                   <SortableTH label="請求番号" sortKey="number" {...sortProps} />
                   <SortableTH label="顧客" sortKey="customer" {...sortProps} />
                   <TH>サービス</TH>
@@ -205,7 +219,12 @@ export default async function InvoicesPage({
               </thead>
               <tbody>
                 {invoices.map((inv) => {
-                  const service = inv.contracts?.service;
+                  // 載っている契約のサービス(まとめ請求なら複数)。系列順に固定
+                  const services = (
+                    Object.keys(SERVICES) as (keyof typeof SERVICES)[]
+                  ).filter((s) =>
+                    inv.invoice_items.some((it) => it.contracts?.service === s),
+                  );
                   const overdue =
                     ["issued", "sent"].includes(inv.status) &&
                     inv.due_date < today;
@@ -214,6 +233,15 @@ export default async function InvoicesPage({
                     : INVOICE_STATUSES[inv.status];
                   return (
                     <TR key={inv.id}>
+                      <TD>
+                        {inv.status === "scheduled" && inv.customers && (
+                          <MergeCheckbox
+                            id={inv.id}
+                            customerId={inv.customers.id}
+                            label={`${inv.customers.name} ${inv.issue_date} をまとめる対象に選ぶ`}
+                          />
+                        )}
+                      </TD>
                       <TD className="font-semibold">
                         {inv.invoice_number ?? "—"}
                       </TD>
@@ -226,15 +254,20 @@ export default async function InvoicesPage({
                         </Link>
                       </TD>
                       <TD>
-                        {service && (
-                          <span className="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary">
+                        <div className="flex flex-col gap-1">
+                          {services.map((service) => (
                             <span
-                              className="size-2 rounded-full"
-                              style={{ background: SERVICES[service].seriesVar }}
-                            />
-                            {SERVICES[service].label}
-                          </span>
-                        )}
+                              key={service}
+                              className="flex items-center gap-1.5 text-xs font-semibold text-ink-secondary"
+                            >
+                              <span
+                                className="size-2 rounded-full"
+                                style={{ background: SERVICES[service].seriesVar }}
+                              />
+                              {SERVICES[service].label}
+                            </span>
+                          ))}
+                        </div>
                       </TD>
                       <TD className="text-xs text-ink-secondary whitespace-nowrap">
                         {inv.period_start} 〜 {inv.period_end}
@@ -338,6 +371,8 @@ export default async function InvoicesPage({
           </CardBody>
         )}
       </Card>
+      <MergeToolbar action={mergeInvoices} />
+      </MergeProvider>
     </div>
   );
 }

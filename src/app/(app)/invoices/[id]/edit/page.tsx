@@ -9,11 +9,13 @@ import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatJPY } from "@/lib/format";
-import { INVOICE_STATUSES } from "@/lib/status";
+import { contractIdsOf } from "@/lib/invoices";
+import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   deleteInvoice,
   restoreInvoice,
+  splitInvoice,
   unissueInvoice,
   unpayInvoice,
   unsendInvoice,
@@ -33,7 +35,9 @@ export default async function EditInvoicePage({
   const db = createAdminClient();
   const { data: invoice } = await db
     .from("invoices")
-    .select("*, invoice_items(description, amount, sort_order), customers(name)")
+    .select(
+      "*, invoice_items(description, amount, sort_order, contract_id, period_start, period_end, contracts(service, plan_name)), customers(name)",
+    )
     .eq("id", id)
     .single();
   if (!invoice) notFound();
@@ -43,6 +47,12 @@ export default async function EditInvoicePage({
   );
   const st = INVOICE_STATUSES[invoice.status];
   const paid = invoice.status === "paid";
+  // 載っている契約(サービス)。まとめ請求なら複数
+  const contracts = contractIdsOf(items).map((cid) => {
+    const c = items.find((it) => it.contract_id === cid)?.contracts;
+    return { id: cid, service: c?.service, plan: c?.plan_name };
+  });
+  const mergeable = invoice.status === "scheduled" && contracts.length >= 2;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -51,6 +61,14 @@ export default async function EditInvoicePage({
         description={`${invoice.customers?.name} ・ ${formatJPY(invoice.total)}`}
         actions={
           <>
+            {contracts.map((c) =>
+              c.service ? (
+                <Badge key={c.id} variant={SERVICES[c.service].badge} dot>
+                  {SERVICES[c.service].label}
+                  {c.plan && ` ${c.plan}`}
+                </Badge>
+              ) : null,
+            )}
             <Badge variant={st.badge} dot>{st.label}</Badge>
             <Link href={`/invoices/${invoice.id}/print`}>
               <Button variant="outline" size="sm">表示</Button>
@@ -101,6 +119,15 @@ export default async function EditInvoicePage({
             <ConfirmForm action={restoreInvoice} message="無効を取り消して「予定」に戻しますか？">
               <input type="hidden" name="id" value={invoice.id} />
               <Button variant="outline" size="sm" type="submit">予定に戻す</Button>
+            </ConfirmForm>
+          )}
+          {mergeable && (
+            <ConfirmForm
+              action={splitInvoice}
+              message="この請求書を契約ごとに分けます。よろしいですか？"
+            >
+              <input type="hidden" name="id" value={invoice.id} />
+              <Button variant="outline" size="sm" type="submit">契約ごとに分ける</Button>
             </ConfirmForm>
           )}
         </CardBody>

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { computeInvoiceSchedule, type BillingCycle } from "@/lib/billing";
+import { SERVICES } from "@/lib/status";
 
 export type ContractFee = {
   description: string;
@@ -54,7 +55,11 @@ export async function createContractWithInvoices(
     .single();
   if (contractError) throw contractError;
 
-  const rollback = async () => {
+  // 請求書は契約にカスケードしないので、生成済みの分も明示的に消す
+  const rollback = async (invoiceIds: string[] = []) => {
+    if (invoiceIds.length > 0) {
+      await db.from("invoices").delete().in("id", invoiceIds);
+    }
     await db.from("contracts").delete().eq("id", contract.id);
   };
 
@@ -69,6 +74,7 @@ export async function createContractWithInvoices(
   }
 
   const drafts = computeInvoiceSchedule({
+    serviceLabel: SERVICES[input.service].label,
     billingCycle: input.billing_cycle,
     amountPerBilling: input.amount_per_billing,
     taxRate: input.tax_rate,
@@ -82,8 +88,8 @@ export async function createContractWithInvoices(
     .insert(
       drafts.map(({ items: _items, ...d }) => ({
         ...d,
-        contract_id: contract.id,
         customer_id: input.customer_id,
+        tax_rate: input.tax_rate,
         status: "scheduled" as const,
       })),
     )
@@ -93,16 +99,20 @@ export async function createContractWithInvoices(
     throw invoiceError ?? new Error("請求書の生成に失敗しました");
   }
 
-  // 明細行を発行日で突き合わせて挿入(発行日は契約内で一意)
+  // 明細行を発行日で突き合わせて挿入(発行日は契約内で一意)。行は契約IDを持つ
   const byIssueDate = new Map(inserted.map((r) => [r.issue_date, r.id]));
   const itemRows = drafts.flatMap((d) => {
     const invoiceId = byIssueDate.get(d.issue_date);
     if (!invoiceId) return [];
-    return d.items.map((it) => ({ ...it, invoice_id: invoiceId }));
+    return d.items.map((it) => ({
+      ...it,
+      invoice_id: invoiceId,
+      contract_id: contract.id,
+    }));
   });
   const { error: itemError } = await db.from("invoice_items").insert(itemRows);
   if (itemError) {
-    await rollback();
+    await rollback(inserted.map((r) => r.id));
     throw itemError;
   }
 

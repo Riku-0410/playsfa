@@ -25,7 +25,7 @@ export default async function ReceiptPrintPage({
     db
       .from("invoices")
       .select(
-        "*, invoice_items(description, amount, sort_order), customers(name, billing_name, billing_address), contracts(service, plan_name), payments(paid_on, amount)",
+        "*, invoice_items(description, amount, sort_order, contract_id, contracts(service, plan_name)), customers(name, billing_name, billing_address), payments(paid_on, amount)",
       )
       .eq("id", id)
       .single(),
@@ -50,16 +50,21 @@ export default async function ReceiptPrintPage({
     .sort()
     .at(-1);
   const receiptDate = lastPaidOn ?? invoice.paid_at;
-  const serviceLabel = invoice.contracts
-    ? `${SERVICES[invoice.contracts.service].label}${
-        invoice.contracts.plan_name ? ` ${invoice.contracts.plan_name}` : ""
-      }`
-    : null;
+  // 但し書き: 明細1行ならその品目、複数なら載っているサービス名を並べて「利用料」
+  const serviceLabels = [
+    ...new Map(
+      items
+        .filter((it) => it.contract_id && it.contracts)
+        .map((it) => [it.contract_id, it.contracts!] as const),
+    ).values(),
+  ].map(
+    (c) => `${SERVICES[c.service].label}${c.plan_name ? ` ${c.plan_name}` : ""}`,
+  );
   const description =
     items.length === 1
       ? items[0].description
-      : serviceLabel
-        ? `${serviceLabel} 利用料`
+      : serviceLabels.length > 0
+        ? `${serviceLabels.join("・")} 利用料`
         : "サービス利用料";
   const rcpNo = receiptNumber(invoice.invoice_number);
 
@@ -186,7 +191,7 @@ export default async function ReceiptPrintPage({
           <div className="text-xs text-ink-muted">
             <p>
               対象期間: {invoice.period_start} 〜 {invoice.period_end}
-              {serviceLabel && ` ・ ${serviceLabel}`}
+              {serviceLabels.length > 0 && ` ・ ${serviceLabels.join(" / ")}`}
             </p>
           </div>
           <div className="shrink-0 text-right">

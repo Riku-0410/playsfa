@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { todayJST } from "@/lib/dates";
 import { nextInvoiceNumber } from "@/lib/invoice-number";
+import { activateContractsOf } from "@/lib/invoices";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   // 1. 自動発行
   const { data: due, error: dueError } = await db
     .from("invoices")
-    .select("id, contract_id")
+    .select("id")
     .eq("status", "scheduled")
     .lte("issue_date", today)
     .order("issue_date");
@@ -44,11 +45,7 @@ export async function GET(request: Request) {
       .eq("status", "scheduled");
     if (!error) {
       issued.push(invoiceNumber);
-      await db
-        .from("contracts")
-        .update({ status: "active" })
-        .eq("id", inv.contract_id)
-        .eq("status", "pending");
+      await activateContractsOf(db, inv.id);
     }
   }
 

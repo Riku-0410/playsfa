@@ -90,7 +90,7 @@ export default async function EditContractPage({
                   <option key={k} value={k}>{v.label}</option>
                 ))}
               </Select>
-              <FieldHint>解約時は「解約」に。以降の請求は請求一覧で個別に無効化してください</FieldHint>
+              <FieldHint>「解約」にすると未発行の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
             </Field>
             <Field>
               <Label htmlFor="ce-note">メモ</Label>
@@ -110,7 +110,7 @@ export default async function EditContractPage({
       <Card className="border border-critical/30">
         <CardBody className="flex items-center justify-between gap-4 py-5">
           <p className="text-xs text-ink-muted">
-            契約を削除すると、生成済みの請求書もすべて消えます。
+            契約を削除すると、この契約の請求書も消えます(他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)。
             入金済みの請求書がある場合は削除できません。
           </p>
           <div className="flex shrink-0 gap-2">
@@ -119,7 +119,7 @@ export default async function EditContractPage({
             </Link>
             <ConfirmForm
               action={deleteContract}
-              message="この契約と生成済みの請求書をすべて削除します。よろしいですか？"
+              message="この契約と、この契約の請求書を削除します。よろしいですか？"
             >
               <input type="hidden" name="id" value={contract.id} />
               <Button variant="danger" size="sm" type="submit">契約を削除</Button>

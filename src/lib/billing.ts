@@ -6,6 +6,9 @@ export type InvoiceItemDraft = {
   description: string;
   amount: number; // 税抜
   sort_order: number;
+  /** 利用料行はその行が対象とする請求期間を持つ。費用行は null */
+  period_start: string | null;
+  period_end: string | null;
 };
 
 export type InvoiceDraft = {
@@ -21,6 +24,24 @@ export type InvoiceDraft = {
 
 /** 支払期限 = 発行日(=請求期間開始日)が属する月の末日 */
 export const dueDateFor = (issueDate: Date) => endOfMonth(issueDate);
+
+/** "yyyy-MM-dd" の発行日から支払期限 "yyyy-MM-dd" */
+export const dueDateForYmd = (issueDate: string) =>
+  fmt(dueDateFor(parseDate(issueDate)));
+
+/** 明細合計から小計・消費税(切り捨て)・合計 */
+export function calcTotals(items: { amount: number }[], taxRate: number) {
+  const subtotal = items.reduce((a, it) => a + it.amount, 0);
+  const tax_amount = Math.floor((subtotal * taxRate) / 100);
+  return { subtotal, tax_amount, total: subtotal + tax_amount };
+}
+
+/** 利用料行の品目名。まとめ請求で複数サービスが並ぶのでサービス名を頭に付ける */
+export const usageDescription = (
+  serviceLabel: string,
+  periodStart: string,
+  periodEnd: string,
+) => `${serviceLabel} 利用料 (${periodStart}〜${periodEnd})`;
 
 function parseDate(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -38,6 +59,7 @@ const fmt = (d: Date) => format(d, "yyyy-MM-dd");
  * - 消費税は明細合計に対して切り捨て
  */
 export function computeInvoiceSchedule(input: {
+  serviceLabel: string;
   billingCycle: BillingCycle;
   amountPerBilling: number;
   taxRate: number;
@@ -57,29 +79,33 @@ export function computeInvoiceSchedule(input: {
 
     const items: InvoiceItemDraft[] = [
       {
-        description: `利用料 (${fmt(periodStart)}〜${fmt(periodEnd)})`,
+        description: usageDescription(
+          input.serviceLabel,
+          fmt(periodStart),
+          fmt(periodEnd),
+        ),
         amount: input.amountPerBilling,
         sort_order: 0,
+        period_start: fmt(periodStart),
+        period_end: fmt(periodEnd),
       },
       ...(i === 0
         ? fees.map((f, j) => ({
             description: f.description,
             amount: f.amount,
             sort_order: j + 1,
+            period_start: null,
+            period_end: null,
           }))
         : []),
     ];
 
-    const subtotal = items.reduce((a, it) => a + it.amount, 0);
-    const taxAmount = Math.floor((subtotal * input.taxRate) / 100);
     return {
       period_start: fmt(periodStart),
       period_end: fmt(periodEnd),
       issue_date: fmt(periodStart),
       due_date: fmt(dueDateFor(periodStart)),
-      subtotal,
-      tax_amount: taxAmount,
-      total: subtotal + taxAmount,
+      ...calcTotals(items, input.taxRate),
       items,
     };
   });

@@ -4,7 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { todayJST } from "@/lib/dates";
 import { requiredStr, str } from "@/lib/form";
+import { calcTotals } from "@/lib/billing";
 import { nextInvoiceNumber } from "@/lib/invoice-number";
+import {
+  activateContractsOf,
+  mergeInvoices as mergeInvoiceRows,
+  splitInvoice as splitInvoiceRows,
+} from "@/lib/invoices";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 function refresh() {
@@ -26,20 +32,27 @@ export async function issueInvoice(formData: FormData) {
     .eq("status", "scheduled");
   if (error) throw error;
 
-  // 初回発行と同時に契約を課金中へ
-  const { data: inv } = await db
-    .from("invoices")
-    .select("contract_id")
-    .eq("id", id)
-    .single();
-  if (inv) {
-    await db
-      .from("contracts")
-      .update({ status: "active" })
-      .eq("id", inv.contract_id)
-      .eq("status", "pending");
-  }
+  // 初回発行と同時に、載っている契約を課金中へ
+  await activateContractsOf(db, id);
   refresh();
+}
+
+/** まとめる: 同じ顧客の未発行請求書を1枚に */
+export async function mergeInvoices(formData: FormData) {
+  const db = createAdminClient();
+  const ids = formData.getAll("ids").map(String).filter(Boolean);
+  const primaryId = await mergeInvoiceRows(db, ids);
+  refresh();
+  redirect(`/invoices/${primaryId}/edit`);
+}
+
+/** 分ける: まとめた請求書を契約ごとに戻す */
+export async function splitInvoice(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  await splitInvoiceRows(db, id);
+  refresh();
+  redirect("/invoices?status=scheduled");
 }
 
 /** 発行取消: 予定に戻して請求番号を返上(欠番になるが番号は再利用されない) */
@@ -151,7 +164,7 @@ export async function updateInvoice(formData: FormData) {
   const id = requiredStr(formData, "id");
   const { data: invoice, error: fetchError } = await db
     .from("invoices")
-    .select("id, status, contracts(tax_rate)")
+    .select("id, status, tax_rate")
     .eq("id", id)
     .single();
   if (fetchError) throw fetchError;
@@ -159,20 +172,23 @@ export async function updateInvoice(formData: FormData) {
     throw new Error("入金済みの請求書は編集できません(先に入金取消を)");
   }
 
+  // 行ごとの契約ID・期間は hidden で往復させて保つ(手で足した行は空)
   const descriptions = formData.getAll("item_description").map(String);
   const amounts = formData.getAll("item_amount").map(String);
+  const contractIds = formData.getAll("item_contract_id").map(String);
+  const periodStarts = formData.getAll("item_period_start").map(String);
+  const periodEnds = formData.getAll("item_period_end").map(String);
   const items = descriptions
     .map((description, i) => ({
       description: description.trim(),
       amount: Number((amounts[i] ?? "").replace(/[,，]/g, "")),
       sort_order: i,
+      contract_id: contractIds[i] || null,
+      period_start: periodStarts[i] || null,
+      period_end: periodEnds[i] || null,
     }))
     .filter((it) => it.description && Number.isFinite(it.amount));
   if (items.length === 0) throw new Error("明細が1行もありません");
-
-  const taxRate = Number(invoice.contracts?.tax_rate ?? 10);
-  const subtotal = items.reduce((a, it) => a + it.amount, 0);
-  const taxAmount = Math.floor((subtotal * taxRate) / 100);
 
   const { error } = await db
     .from("invoices")
@@ -182,9 +198,7 @@ export async function updateInvoice(formData: FormData) {
         : {}),
       due_date: requiredStr(formData, "due_date"),
       note: str(formData, "note"),
-      subtotal,
-      tax_amount: taxAmount,
-      total: subtotal + taxAmount,
+      ...calcTotals(items, Number(invoice.tax_rate)),
     })
     .eq("id", id);
   if (error) throw error;
