@@ -10,7 +10,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
-import { formatJPY } from "@/lib/format";
+import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -26,16 +26,19 @@ function TargetRow({
   service,
   actual,
   target,
+  amount,
   inputName,
 }: {
   service: keyof typeof SERVICES;
   actual: number;
   target: number | undefined;
+  /** 今月トライアル開始の商談の見込額合計(年・税抜) */
+  amount: number;
   inputName: string;
 }) {
   const meta = SERVICES[service];
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
       <span className="flex w-20 shrink-0 items-center gap-1.5 text-xs font-semibold text-ink-secondary">
         <span
           className="size-2 shrink-0 rounded-full"
@@ -47,12 +50,15 @@ function TargetRow({
         value={actual}
         max={target ?? 0}
         color={meta.seriesVar}
-        className="min-w-20 flex-1"
+        className="min-w-10 flex-1"
       />
       <span className="w-24 shrink-0 text-right text-xs text-ink-secondary tabular-nums">
         {target
           ? `${actual} / ${target}件(${Math.round((actual / target) * 100)}%)`
           : `${actual}件 / 目標未設定`}
+      </span>
+      <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums">
+        {amount > 0 ? formatJPYCompact(amount) : <span className="text-ink-muted">—</span>}
       </span>
       <label className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-ink-secondary">
         目標
@@ -111,7 +117,7 @@ export default async function DashboardPage() {
         .eq("status", "active"),
       db
         .from("deals")
-        .select("service, customers(owner_name)")
+        .select("service, amount_expected, customers(owner_name)")
         .gte("trial_start", monthStart)
         .lte("trial_start", monthEnd),
       db
@@ -159,12 +165,20 @@ export default async function DashboardPage() {
     targetOf.set(`${r.owner_name}|${r.service}`, r.target_count);
   }
   const actualOf = new Map<string, number>();
-  const bump = (key: string) => actualOf.set(key, (actualOf.get(key) ?? 0) + 1);
+  // 同じキーで、商談の見込額(年・税抜)を積み上げる。未入力(null)は0扱い
+  const amountOf = new Map<string, number>();
+  const bump = (key: string, amount: number) => {
+    actualOf.set(key, (actualOf.get(key) ?? 0) + 1);
+    amountOf.set(key, (amountOf.get(key) ?? 0) + amount);
+  };
   let unassignedTrials = 0;
+  let noAmountTrials = 0;
   for (const r of monthTrials.data ?? []) {
-    bump(`|${r.service}`);
+    const amount = r.amount_expected ?? 0;
+    if (!r.amount_expected) noAmountTrials += 1;
+    bump(`|${r.service}`, amount);
     const owner = r.customers?.owner_name;
-    if (owner) bump(`${owner}|${r.service}`);
+    if (owner) bump(`${owner}|${r.service}`, amount);
     else unassignedTrials += 1;
   }
   // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 今月の目標を持つ担当者
@@ -179,6 +193,7 @@ export default async function DashboardPage() {
   const kpiActual = SERVICE_KEYS.reduce((a, s) => a + (actualOf.get(`|${s}`) ?? 0), 0);
   const kpiTarget = SERVICE_KEYS.reduce((a, s) => a + (targetOf.get(`|${s}`) ?? 0), 0);
   const kpiPct = kpiTarget > 0 ? Math.round((kpiActual / kpiTarget) * 100) : null;
+  const kpiAmount = SERVICE_KEYS.reduce((a, s) => a + (amountOf.get(`|${s}`) ?? 0), 0);
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -215,6 +230,10 @@ export default async function DashboardPage() {
                     実績 {kpiActual}件 / 目標 {kpiTarget}件
                   </p>
                   <Meter value={kpiActual} max={kpiTarget} className="mt-3" />
+                  <p className="mt-3 text-xs text-ink-muted">今月の積み上げ見込額</p>
+                  <p className="text-xl font-bold tracking-tight">
+                    {formatJPY(kpiAmount)}
+                  </p>
                 </div>
               ) : (
                 <div>
@@ -223,6 +242,10 @@ export default async function DashboardPage() {
                   </p>
                   <p className="mt-2 text-xs text-ink-muted">
                     目標が未設定です。サービスごとの目標件数を入力して保存してください。
+                  </p>
+                  <p className="mt-3 text-xs text-ink-muted">今月の積み上げ見込額</p>
+                  <p className="text-xl font-bold tracking-tight">
+                    {formatJPY(kpiAmount)}
                   </p>
                 </div>
               )}
@@ -233,6 +256,7 @@ export default async function DashboardPage() {
                     service={s}
                     actual={actualOf.get(`|${s}`) ?? 0}
                     target={targetOf.get(`|${s}`)}
+                    amount={amountOf.get(`|${s}`) ?? 0}
                     inputName={`target_${s}`}
                   />
                 ))}
@@ -253,6 +277,7 @@ export default async function DashboardPage() {
                           service={s}
                           actual={actualOf.get(`${rep}|${s}`) ?? 0}
                           target={targetOf.get(`${rep}|${s}`)}
+                          amount={amountOf.get(`${rep}|${s}`) ?? 0}
                           inputName={`rep_${i}_${s}`}
                         />
                       ))}
@@ -266,6 +291,13 @@ export default async function DashboardPage() {
                   </p>
                 )}
               </div>
+            )}
+
+            {noAmountTrials > 0 && (
+              <p className="text-xs text-ink-muted">
+                見込額は商談の「見込額(年・税抜)」の合計です。今月のトライアル
+                {noAmountTrials}件は見込額が未入力のため含まれていません。
+              </p>
             )}
 
             <div className="flex justify-end">
