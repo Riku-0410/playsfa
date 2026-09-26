@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { num, requiredStr, str } from "@/lib/form";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -65,4 +66,9 @@ export async function saveTrialTargets(formData: FormData) {
     if (error) throw error;
   }
   revalidatePath("/");
+  // 過去月を編集していた場合はその月の表示に戻す
+  const returnMonth = str(formData, "return_month");
+  if (returnMonth && /^\d{4}-\d{2}$/.test(returnMonth) && month.startsWith(returnMonth)) {
+    redirect(`/?month=${returnMonth}`);
+  }
 }

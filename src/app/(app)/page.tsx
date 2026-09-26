@@ -9,7 +9,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
-import { addDaysJST, monthBoundsJST, todayJST } from "@/lib/dates";
+import { addDaysJST, addMonths, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -32,7 +32,7 @@ function TargetRow({
   service: keyof typeof SERVICES;
   actual: number;
   target: number | undefined;
-  /** 今月トライアル開始の商談の見込額合計(年・税抜) */
+  /** 対象月にトライアル開始した商談の見込額合計(年・税抜) */
   amount: number;
   inputName: string;
 }) {
@@ -78,10 +78,25 @@ function TargetRow({
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const db = createAdminClient();
   const today = todayJST();
+  // 請求・入金系のカードは常に今月。トライアル目標カードだけ ?month=yyyy-MM で過去月も見られる
   const { start: monthStart, end: monthEnd } = monthBoundsJST();
+  const currentYM = monthStart.slice(0, 7);
+  const { month: rawMonth } = await searchParams;
+  const kpiYM =
+    rawMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth) ? rawMonth : currentYM;
+  const isCurrentMonth = kpiYM === currentYM;
+  const { start: kpiStart, end: kpiEnd } = monthBoundsJST(kpiYM);
+  const [ky, km] = kpiYM.split("-").map(Number);
+  const kpiMonthLabel = isCurrentMonth ? "今月" : `${ky}年${km}月`;
+  const prevYM = addMonths(kpiYM, -1);
+  const nextYM = addMonths(kpiYM, 1);
   const soon = addDaysJST(14);
   const [ty, tm, td] = today.split("-").map(Number);
 
@@ -118,12 +133,12 @@ export default async function DashboardPage() {
       db
         .from("deals")
         .select("service, amount_expected, customers(owner_name)")
-        .gte("trial_start", monthStart)
-        .lte("trial_start", monthEnd),
+        .gte("trial_start", kpiStart)
+        .lte("trial_start", kpiEnd),
       db
         .from("trial_targets")
         .select("service, owner_name, target_count")
-        .eq("month", monthStart),
+        .eq("month", kpiStart),
       db
         .from("customers")
         .select("owner_name")
@@ -159,7 +174,7 @@ export default async function DashboardPage() {
   const toIssueRows = toIssue.data ?? [];
   const trialRows = trials.data ?? [];
 
-  // KPI: 今月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
+  // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
   const targetOf = new Map<string, number>();
   for (const r of targetRes.data ?? []) {
     targetOf.set(`${r.owner_name}|${r.service}`, r.target_count);
@@ -181,7 +196,7 @@ export default async function DashboardPage() {
     if (owner) bump(`${owner}|${r.service}`, amount);
     else unassignedTrials += 1;
   }
-  // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 今月の目標を持つ担当者
+  // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 対象月の目標を持つ担当者
   const reps = [
     ...new Set(
       [
@@ -209,14 +224,34 @@ export default async function DashboardPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>今月のトライアル目標達成率</CardTitle>
-          <p className="text-xs text-ink-muted">
-            {ty}年{tm}月・トライアル導入日ベース
-          </p>
+          <div>
+            <CardTitle>{kpiMonthLabel}のトライアル目標達成率</CardTitle>
+            <p className="mt-1 text-xs text-ink-muted">
+              {ky}年{km}月・トライアル導入日ベース
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Link href={`/?month=${prevYM}`} aria-label="前の月">
+              <Button variant="outline" size="sm">← 前月</Button>
+            </Link>
+            {!isCurrentMonth && (
+              <Link href="/">
+                <Button variant="outline" size="sm">今月</Button>
+              </Link>
+            )}
+            {isCurrentMonth ? (
+              <Button variant="outline" size="sm" disabled aria-label="次の月">翌月 →</Button>
+            ) : (
+              <Link href={`/?month=${nextYM}`} aria-label="次の月">
+                <Button variant="outline" size="sm">翌月 →</Button>
+              </Link>
+            )}
+          </div>
         </CardHeader>
         <CardBody>
           <form action={saveTrialTargets} className="space-y-6">
-            <input type="hidden" name="month" value={monthStart} />
+            <input type="hidden" name="month" value={kpiStart} />
+            <input type="hidden" name="return_month" value={kpiYM} />
             <div className="grid items-center gap-x-10 gap-y-6 lg:grid-cols-[13rem_1fr]">
               {kpiPct !== null ? (
                 <div>
@@ -230,7 +265,7 @@ export default async function DashboardPage() {
                     実績 {kpiActual}件 / 目標 {kpiTarget}件
                   </p>
                   <Meter value={kpiActual} max={kpiTarget} className="mt-3" />
-                  <p className="mt-3 text-xs text-ink-muted">今月の積み上げ見込額</p>
+                  <p className="mt-3 text-xs text-ink-muted">{kpiMonthLabel}の積み上げ見込額</p>
                   <p className="text-xl font-bold tracking-tight">
                     {formatJPY(kpiAmount)}
                   </p>
@@ -243,7 +278,7 @@ export default async function DashboardPage() {
                   <p className="mt-2 text-xs text-ink-muted">
                     目標が未設定です。サービスごとの目標件数を入力して保存してください。
                   </p>
-                  <p className="mt-3 text-xs text-ink-muted">今月の積み上げ見込額</p>
+                  <p className="mt-3 text-xs text-ink-muted">{kpiMonthLabel}の積み上げ見込額</p>
                   <p className="text-xl font-bold tracking-tight">
                     {formatJPY(kpiAmount)}
                   </p>
@@ -286,7 +321,7 @@ export default async function DashboardPage() {
                 </div>
                 {unassignedTrials > 0 && (
                   <p className="mt-4 text-xs text-ink-muted">
-                    担当未設定の顧客のトライアルが今月{unassignedTrials}
+                    担当未設定の顧客のトライアルが{kpiMonthLabel}{unassignedTrials}
                     件あります(全社の実績には含まれています)。顧客に弊社担当者を設定すると担当者別にも反映されます。
                   </p>
                 )}
@@ -295,7 +330,7 @@ export default async function DashboardPage() {
 
             {noAmountTrials > 0 && (
               <p className="text-xs text-ink-muted">
-                見込額は商談の「見込額(年・税抜)」の合計です。今月のトライアル
+                見込額は商談の「見込額(年・税抜)」の合計です。{kpiMonthLabel}のトライアル
                 {noAmountTrials}件は見込額が未入力のため含まれていません。
               </p>
             )}
