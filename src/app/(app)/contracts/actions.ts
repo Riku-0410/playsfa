@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { BillingCycle } from "@/lib/billing";
-import { createContractWithInvoices, renewContract as renewContractRecord } from "@/lib/contracts";
+import {
+  createContractWithInvoices,
+  createInvoiceForPeriod,
+  DuplicateContractError,
+  renewContract as renewContractRecord,
+} from "@/lib/contracts";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import {
@@ -31,19 +36,35 @@ export async function createContract(formData: FormData) {
   const amount = num(formData, "amount_per_billing");
   if (!amount || amount <= 0) throw new Error("請求額が不正です");
 
-  const { contractId } = await createContractWithInvoices(db, {
-    customer_id: requiredStr(formData, "customer_id"),
-    deal_id: str(formData, "deal_id"),
-    service: requiredStr(formData, "service") as "playcut" | "baskestats",
-    plan_name: str(formData, "plan_name"),
-    billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
-    amount_per_billing: amount,
-    tax_rate: num(formData, "tax_rate") ?? 10,
-    agreement_date: requiredStr(formData, "agreement_date"),
-    billing_start_date: requiredStr(formData, "billing_start_date"),
-    note: str(formData, "note"),
-    fees: parseFees(formData),
-  });
+  const customerId = requiredStr(formData, "customer_id");
+  const dealId = str(formData, "deal_id");
+  let contractId: string;
+  try {
+    ({ contractId } = await createContractWithInvoices(db, {
+      customer_id: customerId,
+      deal_id: dealId,
+      service: requiredStr(formData, "service") as "playcut" | "baskestats",
+      plan_name: str(formData, "plan_name"),
+      billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
+      amount_per_billing: amount,
+      tax_rate: num(formData, "tax_rate") ?? 10,
+      agreement_date: requiredStr(formData, "agreement_date"),
+      billing_start_date: requiredStr(formData, "billing_start_date"),
+      note: str(formData, "note"),
+      fees: parseFees(formData),
+    }));
+  } catch (e) {
+    // 二重登録はフォームに戻して既存契約を案内する(本番ではthrowのメッセージが伏せられるため)
+    if (e instanceof DuplicateContractError) {
+      const q = new URLSearchParams({
+        customer: customerId,
+        dup: e.existingId,
+      });
+      if (dealId) q.set("deal", dealId);
+      redirect(`/contracts/new?${q}`);
+    }
+    throw e;
+  }
 
   revalidatePath("/contracts");
   revalidatePath("/invoices");
@@ -59,7 +80,7 @@ export async function updateContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const status = requiredStr(formData, "status") as
-    | "pending" | "active" | "ended" | "churned";
+    "pending" | "active" | "ended" | "churned";
   const { data: before, error: fetchError } = await db
     .from("contracts")
     .select("status, churned_at")
@@ -110,7 +131,8 @@ export async function deleteContract(formData: FormData) {
     const solo = remaining.filter(
       (invId) =>
         !(rows ?? []).some(
-          (r) => r.invoice_id === invId && r.contract_id && r.contract_id !== id,
+          (r) =>
+            r.invoice_id === invId && r.contract_id && r.contract_id !== id,
         ),
     );
     if (solo.length > 0) {
@@ -158,6 +180,22 @@ export async function endContract(formData: FormData) {
     .in("status", ["active", "pending"]);
   if (error) throw error;
   await dropContractFromScheduled(db, id, "void");
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/reports");
+  revalidatePath("/");
+}
+
+/** 登録漏れの補填: 請求書が欠けている請求期間の分を作る */
+export async function createMissingInvoice(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  await createInvoiceForPeriod(
+    db,
+    id,
+    requiredStr(formData, "period_start"),
+    todayJST(),
+  );
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/reports");

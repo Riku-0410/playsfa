@@ -1,6 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
-import { computeInvoiceSchedule, nextTermStart, type BillingCycle } from "@/lib/billing";
+import {
+  computeInvoiceSchedule,
+  contractEndDate,
+  dueDateForYmd,
+  nextTermStart,
+  type BillingCycle,
+} from "@/lib/billing";
 import { BILLING_CYCLES, SERVICES } from "@/lib/status";
 
 export type ContractFee = {
@@ -24,22 +30,65 @@ export type NewContract = {
   fees?: ContractFee[];
 };
 
+/** 同じ顧客・サービスで期間の重なる課金待ち/課金中の契約がすでにある */
+export class DuplicateContractError extends Error {
+  constructor(public existingId: string) {
+    super("同じ顧客・サービスで期間の重なる契約がすでにあります");
+  }
+}
+
 /**
  * 契約を登録し、契約期間分の請求書(明細付き)を scheduled で先行生成する。
  * 初期費用・年間費用は初回請求に明細行として載る。
  * 途中で失敗したら契約ごと巻き戻す。
+ * - 同じ顧客・サービスで期間の重なる契約があれば DuplicateContractError(継続なら「更新」を使う)
+ * - 商談の指定がなければ、同じ顧客・サービスの未契約の商談(失注以外)を自動で紐づける
  */
 export async function createContractWithInvoices(
   db: SupabaseClient<Database>,
   input: NewContract,
 ): Promise<{ contractId: string; invoiceCount: number }> {
   const fees = input.fees ?? [];
+  const termMonths = input.term_months ?? 12;
+
+  const { data: existing, error: existingError } = await db
+    .from("contracts")
+    .select("id, deal_id, billing_start_date, term_months")
+    .eq("customer_id", input.customer_id)
+    .eq("service", input.service)
+    .in("status", ["pending", "active"]);
+  if (existingError) throw existingError;
+  const newEnd = contractEndDate(input.billing_start_date, termMonths);
+  const overlapping = (existing ?? []).find(
+    (c) =>
+      c.billing_start_date <= newEnd &&
+      input.billing_start_date <=
+        contractEndDate(c.billing_start_date, c.term_months),
+  );
+  if (overlapping) throw new DuplicateContractError(overlapping.id);
+
+  let dealId = input.deal_id ?? null;
+  if (!dealId) {
+    const { data: linked } = await db
+      .from("contracts")
+      .select("deal_id")
+      .not("deal_id", "is", null);
+    const taken = new Set((linked ?? []).map((r) => r.deal_id));
+    const { data: candidates } = await db
+      .from("deals")
+      .select("id")
+      .eq("customer_id", input.customer_id)
+      .eq("service", input.service)
+      .neq("stage", "lost")
+      .order("updated_at", { ascending: false });
+    dealId = (candidates ?? []).find((d) => !taken.has(d.id))?.id ?? null;
+  }
 
   const { data: contract, error: contractError } = await db
     .from("contracts")
     .insert({
       customer_id: input.customer_id,
-      deal_id: input.deal_id ?? null,
+      deal_id: dealId,
       service: input.service,
       plan_name: input.plan_name ?? null,
       billing_cycle: input.billing_cycle,
@@ -47,7 +96,7 @@ export async function createContractWithInvoices(
       tax_rate: input.tax_rate,
       agreement_date: input.agreement_date,
       billing_start_date: input.billing_start_date,
-      term_months: input.term_months ?? 12,
+      term_months: termMonths,
       status: "pending",
       note: input.note ?? null,
     })
@@ -79,7 +128,7 @@ export async function createContractWithInvoices(
     amountPerBilling: input.amount_per_billing,
     taxRate: input.tax_rate,
     billingStartDate: input.billing_start_date,
-    termMonths: input.term_months ?? 12,
+    termMonths,
     fees,
   });
 
@@ -116,12 +165,12 @@ export async function createContractWithInvoices(
     throw itemError;
   }
 
-  // 商談から作った契約なら商談を成約に倒す
-  if (input.deal_id) {
+  // 商談に紐づいた契約なら商談を成約に倒す
+  if (dealId) {
     await db
       .from("deals")
       .update({ stage: "won", closed_at: input.agreement_date })
-      .eq("id", input.deal_id);
+      .eq("id", dealId);
   }
 
   return { contractId: contract.id, invoiceCount: drafts.length };
@@ -239,4 +288,76 @@ export async function renewContract(
   }
 
   return { nextStart, invoiceCount: drafts.length };
+}
+
+/**
+ * 請求書が欠けている請求期間の分を1本作る(登録漏れの補填)。
+ * - 利用料行は契約の現在の金額。契約の初回期間なら初期費用・年間費用も載せる
+ *   (更新期の毎年費用は判別できないので載せない。必要なら請求書の編集で足す)
+ * - 期間開始が過去なら発行予定日は今日(翌朝の日次バッチで採番される)
+ */
+export async function createInvoiceForPeriod(
+  db: SupabaseClient<Database>,
+  contractId: string,
+  periodStart: string,
+  today: string,
+): Promise<string> {
+  const { data: c, error } = await db
+    .from("contracts")
+    .select("*, contract_fees(description, amount, recurring)")
+    .eq("id", contractId)
+    .single();
+  if (error) throw error;
+  if (c.status !== "pending" && c.status !== "active") {
+    throw new Error("課金待ち・課金中の契約だけが対象です");
+  }
+
+  const [draft] = computeInvoiceSchedule({
+    serviceLabel: SERVICES[c.service].label,
+    billingCycle: c.billing_cycle,
+    amountPerBilling: c.amount_per_billing,
+    taxRate: Number(c.tax_rate),
+    billingStartDate: periodStart,
+    termMonths: c.billing_cycle === "annual" ? 12 : 6,
+    fees: periodStart === c.billing_start_date ? (c.contract_fees ?? []) : [],
+  });
+
+  // 二重作成ガード: この契約の明細を持つ有効な請求書がすでにこの期間をカバーしている
+  const { data: covered } = await db
+    .from("invoice_items")
+    .select("id, invoices!inner(status, period_start, period_end)")
+    .eq("contract_id", c.id)
+    .neq("invoices.status", "void")
+    .lte("invoices.period_start", periodStart)
+    .gte("invoices.period_end", periodStart)
+    .limit(1);
+  if ((covered ?? []).length > 0)
+    throw new Error("この期間の請求書はすでにあります");
+
+  const issueDate = draft.issue_date < today ? today : draft.issue_date;
+  const { items, ...head } = draft;
+  const { data: inv, error: invError } = await db
+    .from("invoices")
+    .insert({
+      ...head,
+      issue_date: issueDate,
+      due_date: dueDateForYmd(issueDate),
+      customer_id: c.customer_id,
+      tax_rate: c.tax_rate,
+      status: "scheduled" as const,
+    })
+    .select("id")
+    .single();
+  if (invError) throw invError;
+
+  const { error: itemError } = await db
+    .from("invoice_items")
+    .insert(
+      items.map((it) => ({ ...it, invoice_id: inv.id, contract_id: c.id })),
+    );
+  if (itemError) {
+    await db.from("invoices").delete().eq("id", inv.id);
+    throw itemError;
+  }
+  return inv.id;
 }

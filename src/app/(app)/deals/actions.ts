@@ -67,10 +67,18 @@ export async function updateDeal(formData: FormData) {
     service: requiredStr(formData, "service") as Service,
     amount_expected: num(formData, "amount_expected"),
   };
-  const closed =
-    values.stage === "won" || values.stage === "lost"
-      ? { closed_at: todayJST() }
-      : { closed_at: null };
+  // 成約・失注に変わったときだけ成約日を今日に。同じステージのまま保存しても元の日付を保つ
+  const { data: before } = await db
+    .from("deals")
+    .select("stage, closed_at")
+    .eq("id", id)
+    .single();
+  const isClosed = values.stage === "won" || values.stage === "lost";
+  const closed = !isClosed
+    ? { closed_at: null }
+    : before?.stage === values.stage && before.closed_at
+      ? { closed_at: before.closed_at }
+      : { closed_at: todayJST() };
   const { error } = await db
     .from("deals")
     .update({ ...values, ...closed })

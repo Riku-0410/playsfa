@@ -14,7 +14,8 @@ import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
-import { endContract } from "./contracts/actions";
+import { findPipelineGaps } from "@/lib/integrity";
+import { createMissingInvoice, endContract } from "./contracts/actions";
 import { registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
@@ -100,7 +101,7 @@ export default async function DashboardPage({
   const soon = addDaysJST(14);
   const [ty, tm, td] = today.split("-").map(Number);
 
-  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows] =
+  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps] =
     await Promise.all([
       db
         .from("invoices")
@@ -148,7 +149,12 @@ export default async function DashboardPage({
         .from("contracts")
         .select("id, service, billing_start_date, term_months, customers(name)")
         .eq("status", "active"),
+      findPipelineGaps(db),
     ]);
+  const { dealsWithoutContract, contractGaps } = gaps;
+  const gapCount =
+    dealsWithoutContract.length +
+    contractGaps.reduce((a, g) => a + g.missingPeriods.length, 0);
 
   // 契約期間の終了が今月〜翌月、または過ぎているのに課金中 = 更新か満了かを決める対象
   const endingRows = (activeRows.data ?? [])
@@ -434,6 +440,137 @@ export default async function DashboardPage({
           )}
         </Card>
       </div>
+
+      {gapCount > 0 && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle className="text-critical-deep">登録漏れ {gapCount}件</CardTitle>
+              <p className="mt-1 text-xs text-ink-muted">
+                成約なのに契約がない商談と、契約期間内なのに請求書がない請求期間。売上・入金予測に入らないので早めに埋める
+              </p>
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-6 px-2 pt-2">
+            {dealsWithoutContract.length > 0 && (
+              <div>
+                <p className="px-3 pb-1 text-xs font-bold text-ink-secondary">
+                  成約 → 契約が未登録({dealsWithoutContract.length}件)
+                </p>
+                <div className="max-h-80 overflow-y-auto">
+                <Table>
+                  <thead>
+                    <tr>
+                      <TH>顧客</TH>
+                      <TH>サービス</TH>
+                      <TH>成約日</TH>
+                      <TH numeric>見込額</TH>
+                      <TH>アクション</TH>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dealsWithoutContract.map((d) => (
+                      <TR key={d.id}>
+                        <TD className="font-semibold">
+                          <Link href={`/deals/${d.id}`} className="hover:underline">
+                            {d.customerName}
+                          </Link>
+                        </TD>
+                        <TD>
+                          <Badge variant={SERVICES[d.service].badge} dot>
+                            {SERVICES[d.service].label}
+                          </Badge>
+                        </TD>
+                        <TD className="text-ink-secondary">{d.closed_at ?? "—"}</TD>
+                        <TD numeric>
+                          {d.amount_expected ? formatJPY(d.amount_expected) : "—"}
+                        </TD>
+                        <TD>
+                          <Link href={`/contracts/new?deal=${d.id}`}>
+                            <Button size="sm">契約を作成</Button>
+                          </Link>
+                        </TD>
+                      </TR>
+                    ))}
+                  </tbody>
+                </Table>
+                </div>
+              </div>
+            )}
+            {contractGaps.length > 0 && (
+              <div>
+                <p className="px-3 pb-1 text-xs font-bold text-ink-secondary">
+                  契約 → 請求書がない期間(
+                  {contractGaps.reduce((a, g) => a + g.missingPeriods.length, 0)}件)
+                </p>
+                <div className="max-h-80 overflow-y-auto">
+                <Table>
+                  <thead>
+                    <tr>
+                      <TH>顧客</TH>
+                      <TH>サービス</TH>
+                      <TH>請求期間の開始</TH>
+                      <TH>アクション</TH>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {contractGaps.flatMap((g) =>
+                      g.missingPeriods.map((ps) => (
+                        <TR key={`${g.contractId}:${ps}`}>
+                          <TD className="font-semibold">
+                            <Link href={`/customers/${g.customerId}`} className="hover:underline">
+                              {g.customerName}
+                            </Link>
+                          </TD>
+                          <TD>
+                            <Badge variant={SERVICES[g.service].badge} dot>
+                              {SERVICES[g.service].label}
+                            </Badge>
+                          </TD>
+                          <TD
+                            className={
+                              ps <= today
+                                ? "font-semibold text-critical-deep"
+                                : "text-ink-secondary"
+                            }
+                          >
+                            {ps}
+                          </TD>
+                          <TD>
+                            {g.hasSibling ? (
+                              <div className="flex items-center gap-2">
+                                <Badge variant="warn" dot>二重登録の疑い</Badge>
+                                <Link href={`/contracts/${g.contractId}/edit`}>
+                                  <Button size="sm" variant="outline">契約を確認</Button>
+                                </Link>
+                              </div>
+                            ) : (
+                              <ConfirmForm
+                                action={createMissingInvoice}
+                                message={`${ps}開始の請求期間の請求書を作成します。${ps <= today ? "開始日を過ぎているので明朝の日次バッチで発行(採番)されます。" : ""}よろしいですか？`}
+                              >
+                                <input type="hidden" name="id" value={g.contractId} />
+                                <input type="hidden" name="period_start" value={ps} />
+                                <Button size="sm" type="submit">請求書を作成</Button>
+                              </ConfirmForm>
+                            )}
+                          </TD>
+                        </TR>
+                      )),
+                    )}
+                  </tbody>
+                </Table>
+                </div>
+                {contractGaps.some((g) => g.hasSibling) && (
+                  <p className="px-3 pt-2 text-xs text-ink-muted">
+                    「二重登録の疑い」は同じ顧客・サービスの契約がほかにもあるもの。重複なら不要な方を契約編集から削除してください(課金中の契約数・ARRに二重に数えられています)。
+                  </p>
+                )}
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      )}
 
       {endingRows.length > 0 && (
         <Card>

@@ -1,9 +1,11 @@
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchSelect } from "@/components/ui/search-select";
+import { contractEndDate } from "@/lib/billing";
 import { todayJST } from "@/lib/dates";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -15,12 +17,12 @@ export const dynamic = "force-dynamic";
 export default async function NewContractPage({
   searchParams,
 }: {
-  searchParams: Promise<{ deal?: string; customer?: string }>;
+  searchParams: Promise<{ deal?: string; customer?: string; dup?: string }>;
 }) {
-  const { deal: dealId, customer: customerId } = await searchParams;
+  const { deal: dealId, customer: customerId, dup: dupId } = await searchParams;
   const db = createAdminClient();
 
-  const [customersRes, dealRes] = await Promise.all([
+  const [customersRes, dealRes, dupRes] = await Promise.all([
     db.from("customers").select("id, name").order("name"),
     dealId
       ? db
@@ -29,7 +31,15 @@ export default async function NewContractPage({
           .eq("id", dealId)
           .single()
       : Promise.resolve({ data: null }),
+    dupId
+      ? db
+          .from("contracts")
+          .select("id, service, billing_start_date, term_months, customers(name)")
+          .eq("id", dupId)
+          .single()
+      : Promise.resolve({ data: null }),
   ]);
+  const dup = dupRes.data;
   const customers = customersRes.data ?? [];
   const deal = dealRes.data;
   const today = todayJST();
@@ -44,6 +54,29 @@ export default async function NewContractPage({
             : undefined
         }
       />
+
+      {dup && (
+        <div
+          role="alert"
+          className="rounded-inner bg-critical-soft px-4 py-3 text-sm text-critical-deep"
+        >
+          <p className="font-semibold">
+            {dup.customers?.name} の {SERVICES[dup.service].label} には、期間の重なる契約がすでにあります(
+            {dup.billing_start_date}〜{contractEndDate(dup.billing_start_date, dup.term_months)})。
+          </p>
+          <p className="mt-1 text-xs">
+            二重登録を防ぐため登録していません。継続なら既存契約の
+            <Link href={`/contracts/${dup.id}/renew`} className="mx-1 font-semibold underline">
+              更新
+            </Link>
+            を、内容の確認は
+            <Link href={`/invoices?contract=${dup.id}`} className="mx-1 font-semibold underline">
+              既存契約の請求書
+            </Link>
+            から。
+          </p>
+        </div>
+      )}
 
       <CardInset className="p-4 text-xs text-ink-secondary">
         登録と同時に、契約期間分の請求書が「予定」として自動生成されます。

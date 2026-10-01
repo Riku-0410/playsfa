@@ -8,7 +8,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDate } from "@/lib/format";
-import { DEAL_STAGES, SERVICES } from "@/lib/status";
+import { CONTRACT_STATUSES, DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { deleteDeal, logDealActivity, updateDeal } from "../actions";
 import { DealForm } from "../deal-form";
@@ -35,6 +35,17 @@ export default async function DealDetailPage({
   ]);
   const deal = dealRes.data;
   if (!deal) notFound();
+
+  // この商談の契約。取込や顧客画面から作った契約は商談IDを持たないので、同じ顧客・サービスでも探す
+  const { data: contractRows } = await db
+    .from("contracts")
+    .select("id, deal_id, status, billing_start_date")
+    .eq("customer_id", deal.customer_id)
+    .eq("service", deal.service)
+    .order("billing_start_date", { ascending: false });
+  const contract =
+    (contractRows ?? []).find((c) => c.deal_id === deal.id) ??
+    (contractRows ?? []).find((c) => !c.deal_id);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -88,7 +99,33 @@ export default async function DealDetailPage({
         }
       />
 
-      {deal.stage !== "lost" && (
+      {contract ? (
+        <Card>
+          <CardBody className="flex items-center justify-between gap-4 py-5">
+            <p className="flex items-center gap-2 text-sm">
+              <Badge variant={CONTRACT_STATUSES[contract.status].badge} dot>
+                {CONTRACT_STATUSES[contract.status].label}
+              </Badge>
+              契約登録済み(課金開始 {formatDate(contract.billing_start_date)})
+            </p>
+            <Link href={`/invoices?contract=${contract.id}`} className="shrink-0">
+              <Button variant="outline" size="sm">契約の請求書 →</Button>
+            </Link>
+          </CardBody>
+        </Card>
+      ) : deal.stage === "won" ? (
+        <Card className="bg-critical-soft">
+          <CardBody className="flex items-center justify-between gap-4 py-5">
+            <p className="text-sm text-critical-deep">
+              <span className="font-semibold">成約なのに契約が未登録です。</span>
+              契約を登録すると請求書が自動で作られます。
+            </p>
+            <Link href={`/contracts/new?deal=${deal.id}`} className="shrink-0">
+              <Button>契約を作成 →</Button>
+            </Link>
+          </CardBody>
+        </Card>
+      ) : deal.stage !== "lost" && (
         <Card className="bg-night text-night-ink">
           <CardBody className="flex items-center justify-between gap-4 py-5">
             <p className="text-sm">
