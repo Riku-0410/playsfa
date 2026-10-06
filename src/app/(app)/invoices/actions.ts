@@ -219,12 +219,21 @@ export async function updateInvoice(formData: FormData) {
 export async function markSent(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
+  const sentAt = new Date().toISOString();
   const { error } = await db
     .from("invoices")
-    .update({ status: "sent", sent_at: new Date().toISOString() })
+    .update({ status: "sent", sent_at: sentAt })
     .eq("id", id)
     .eq("status", "issued");
   if (error) throw error;
+  // 送る前に期限超過になったもの: ステータスは期限超過のまま送付日だけ記録
+  const { error: overdueError } = await db
+    .from("invoices")
+    .update({ sent_at: sentAt })
+    .eq("id", id)
+    .eq("status", "overdue")
+    .is("sent_at", null);
+  if (overdueError) throw overdueError;
   refresh();
 }
 

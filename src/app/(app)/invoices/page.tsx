@@ -14,6 +14,7 @@ import { formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { addMonths, monthBoundsJST } from "@/lib/dates";
 import { ConfirmForm } from "@/components/confirm-form";
 import {
   issueInvoice,
@@ -30,6 +31,7 @@ export const dynamic = "force-dynamic";
 
 const FILTERS: Record<string, string> = {
   scheduled: "予定",
+  unsent: "送付待ち(今月・来月期限)",
   issued: "発行済",
   sent: "送付済",
   unpaid: "未入金",
@@ -81,13 +83,22 @@ export default async function InvoicesPage({
   let query = db
     .from("invoices")
     .select(
-      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, customers!inner(id, name), invoice_items(contract_id, contracts(service))",
+      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, sent_at, customers!inner(id, name), invoice_items(contract_id, contracts(service))",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
-  if (status === "unpaid") {
+  if (status === "unsent") {
+    // 前倒し発行(半期・年払いなど)したのにまだ送っていないもの。期限が今月・来月の分
+    const { start } = monthBoundsJST();
+    const { end } = monthBoundsJST(addMonths(start.slice(0, 7), 1));
+    query = query
+      .in("status", ["issued", "overdue"])
+      .is("sent_at", null)
+      .gte("due_date", start)
+      .lte("due_date", end);
+  } else if (status === "unpaid") {
     query = query.in("status", ["issued", "sent", "overdue"]);
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
@@ -295,7 +306,8 @@ export default async function InvoicesPage({
                               <Button size="sm" type="submit">発行</Button>
                             </form>
                           )}
-                          {inv.status === "issued" && (
+                          {(inv.status === "issued" ||
+                            (inv.status === "overdue" && !inv.sent_at)) && (
                             <form action={markSent}>
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="dark" type="submit">

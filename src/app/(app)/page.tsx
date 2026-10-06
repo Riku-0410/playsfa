@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { createMissingInvoice, endContract } from "./contracts/actions";
-import { registerPayment } from "./invoices/actions";
+import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
 /** KPIカードの系列。チャートと同じ固定順・固定色 */
@@ -111,7 +111,7 @@ export default async function DashboardPage({
         .neq("status", "void"),
       db
         .from("invoices")
-        .select("id, total, due_date, invoice_number, status, customers(name)")
+        .select("id, total, due_date, invoice_number, status, sent_at, customers(name)")
         .in("status", ["issued", "sent", "overdue"])
         .order("due_date"),
       db
@@ -178,6 +178,15 @@ export default async function DashboardPage({
   );
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const toIssueRows = toIssue.data ?? [];
+  // 発行済みだが未送付で、支払期限が今月・来月のもの(半期・年払いの前倒し発行など)
+  const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
+  const unsentRows = unpaidRows.filter(
+    (r) =>
+      !r.sent_at &&
+      r.status !== "sent" &&
+      r.due_date >= monthStart &&
+      r.due_date <= nextMonthEnd,
+  );
   const trialRows = trials.data ?? [];
 
   // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
@@ -440,6 +449,63 @@ export default async function DashboardPage({
           )}
         </Card>
       </div>
+
+      {unsentRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>送付待ちの請求書(今月・来月期限) {unsentRows.length}件</CardTitle>
+            <Link href="/invoices?status=unsent&sort=due">
+              <Button variant="outline" size="sm">請求一覧で見る →</Button>
+            </Link>
+          </CardHeader>
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>請求番号</TH>
+                  <TH>顧客</TH>
+                  <TH>支払期限</TH>
+                  <TH numeric>金額</TH>
+                  <TH>アクション</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {unsentRows.map((r) => (
+                  <TR key={r.id}>
+                    <TD className="font-semibold">{r.invoice_number ?? "—"}</TD>
+                    <TD>{r.customers?.name}</TD>
+                    <TD
+                      className={
+                        r.due_date < today
+                          ? "font-semibold text-critical-deep"
+                          : "text-ink-secondary"
+                      }
+                    >
+                      {r.due_date}
+                    </TD>
+                    <TD numeric className="font-semibold">
+                      {formatJPY(r.total)}
+                    </TD>
+                    <TD>
+                      <div className="flex flex-wrap gap-1.5">
+                        <form action={markSent}>
+                          <input type="hidden" name="id" value={r.id} />
+                          <Button size="sm" variant="dark" type="submit">
+                            送付済に
+                          </Button>
+                        </form>
+                        <Link href={`/invoices/${r.id}/print`}>
+                          <Button size="sm" variant="ghost">表示</Button>
+                        </Link>
+                      </div>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       {gapCount > 0 && (
         <Card>
