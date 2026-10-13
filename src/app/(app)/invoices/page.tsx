@@ -92,7 +92,8 @@ export default async function InvoicesPage({
     const { end } = monthBoundsJST(addMonths(start.slice(0, 7), 1));
     query = query.eq("status", "unsent").lte("due_date", end);
   } else if (status === "unpaid") {
-    query = query.in("status", ["sent", "overdue"]);
+    // 送付済・期限超過に加え、送付の記録がないまま期限を過ぎたもの
+    query = query.or(`status.in.(sent,overdue),and(status.eq.unsent,due_date.lt.${today})`);
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
@@ -308,7 +309,7 @@ export default async function InvoicesPage({
                               </Button>
                             </ConfirmForm>
                           )}
-                          {["sent", "overdue"].includes(inv.status) && (
+                          {(["sent", "overdue"].includes(inv.status) || (unsent && overdue)) && (
                             <form action={registerPayment}>
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="outline" type="submit">

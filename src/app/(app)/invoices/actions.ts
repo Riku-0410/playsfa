@@ -197,27 +197,28 @@ export async function updateInvoice(formData: FormData) {
 
 /**
  * 送付: 請求番号がまだなければ採番して送付済へ(番号は送付取消・無効で戻しても返上しない)。
- * 載っている課金待ちの契約は課金中に。期限を過ぎてから送ったものは翌朝の日次バッチで期限超過になる
+ * 載っている課金待ちの契約は課金中に。期限を過ぎてから送ったものはそのまま期限超過に
  */
 export async function markSent(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const { data: invoice, error: fetchError } = await db
     .from("invoices")
-    .select("status, invoice_number")
+    .select("status, invoice_number, due_date")
     .eq("id", id)
     .single();
   if (fetchError) throw fetchError;
   if (invoice.status !== "unsent") throw new Error("未送付の請求書ではありません");
 
+  const today = todayJST();
   const invoiceNumber =
     invoice.invoice_number ??
-    (await nextInvoiceNumber(db, Number(todayJST().slice(0, 4))));
+    (await nextInvoiceNumber(db, Number(today.slice(0, 4))));
   const { error } = await db
     .from("invoices")
     .update({
       invoice_number: invoiceNumber,
-      status: "sent",
+      status: invoice.due_date < today ? "overdue" : "sent",
       sent_at: new Date().toISOString(),
     })
     .eq("id", id)
@@ -235,11 +236,11 @@ export async function registerPayment(formData: FormData) {
 
   const { data: invoice, error: fetchError } = await db
     .from("invoices")
-    .select("id, total, status")
+    .select("id, total, status, invoice_number")
     .eq("id", id)
     .single();
   if (fetchError) throw fetchError;
-  if (!["sent", "overdue"].includes(invoice.status)) {
+  if (!["unsent", "sent", "overdue"].includes(invoice.status)) {
     throw new Error("入金登録できないステータスです");
   }
 
@@ -251,10 +252,15 @@ export async function registerPayment(formData: FormData) {
   });
   if (payError) throw payError;
 
+  // 「送付済に」を押さずに入金されたものも、ここで番号を付ける
+  const invoiceNumber =
+    invoice.invoice_number ??
+    (await nextInvoiceNumber(db, Number(today.slice(0, 4))));
   const { error } = await db
     .from("invoices")
-    .update({ status: "paid", paid_at: today })
+    .update({ status: "paid", paid_at: today, invoice_number: invoiceNumber })
     .eq("id", id);
   if (error) throw error;
+  if (invoice.status === "unsent") await activateContractsOf(db, id);
   refresh();
 }

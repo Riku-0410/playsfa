@@ -113,7 +113,8 @@ export default async function DashboardPage({
       db
         .from("invoices")
         .select("id, total, due_date, invoice_number, status, customers(name)")
-        .in("status", ["sent", "overdue"])
+        .in("status", ["unsent", "sent", "overdue"])
+        .lt("due_date", today)
         .order("due_date"),
       db
         .from("deals")
@@ -145,11 +146,12 @@ export default async function DashboardPage({
         .select("id, service, billing_start_date, term_months, customers(name)")
         .eq("status", "active"),
       findPipelineGaps(db),
-      // 送付待ち: 未送付で期限が来月末まで(期限を過ぎてしまったものも含む)
+      // 送付待ち: 未送付で期限が今日〜来月末(期限を過ぎたものは期限超過の欄に出す)
       db
         .from("invoices")
         .select("id, total, issue_date, due_date, invoice_number, customers(name)")
         .eq("status", "unsent")
+        .gte("due_date", today)
         .lte("due_date", nextMonthEnd)
         .order("due_date"),
     ]);
@@ -172,12 +174,8 @@ export default async function DashboardPage({
   const monthRemaining = (monthInvoices.data ?? [])
     .filter((r) => r.status !== "paid")
     .reduce((a, r) => a + r.total, 0);
-  const unpaidRows = unpaid.data ?? [];
-  // 期日超過のみを未回収として扱う。ステータス更新は日次バッチ(毎朝7時JST)なので
-  // 実行前でも拾えるよう due_date でもフォールバック判定する
-  const overdueRows = unpaidRows.filter(
-    (r) => r.status === "overdue" || r.due_date < today,
-  );
+  // 期限を過ぎた未入金。送付の記録がないもの(送ったが「送付済に」を押していない等)も含める
+  const overdueRows = unpaid.data ?? [];
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const unsentRows = upcoming.data ?? [];
   const trialRows = trials.data ?? [];
@@ -703,12 +701,25 @@ export default async function DashboardPage({
                       </Badge>
                     </TD>
                     <TD>
-                      <form action={registerPayment}>
-                        <input type="hidden" name="id" value={r.id} />
-                        <Button size="sm" variant="outline" type="submit">
-                          入金登録
-                        </Button>
-                      </form>
+                      <div className="flex flex-wrap gap-1.5">
+                        {r.status === "unsent" && (
+                          <ConfirmForm
+                            action={markSent}
+                            message={`合計 ${formatJPY(r.total)}(税込)で送付済にします${r.invoice_number ? "" : "(請求番号が付きます)"}。`}
+                          >
+                            <input type="hidden" name="id" value={r.id} />
+                            <Button size="sm" variant="outline" type="submit">
+                              送付済に
+                            </Button>
+                          </ConfirmForm>
+                        )}
+                        <form action={registerPayment}>
+                          <input type="hidden" name="id" value={r.id} />
+                          <Button size="sm" variant="outline" type="submit">
+                            入金登録
+                          </Button>
+                        </form>
+                      </div>
                     </TD>
                   </TR>
                 ))}
