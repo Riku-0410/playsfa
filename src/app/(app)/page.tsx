@@ -102,7 +102,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming] =
     await Promise.all([
       db
         .from("invoices")
@@ -115,12 +115,6 @@ export default async function DashboardPage({
         .select("id, total, issue_date, due_date, invoice_number, status, sent_at, customers(name)")
         .in("status", ["issued", "sent", "overdue"])
         .order("due_date"),
-      db
-        .from("invoices")
-        .select("id, total, issue_date, customers(name)")
-        .eq("status", "scheduled")
-        .lte("issue_date", today)
-        .order("issue_date"),
       db
         .from("deals")
         .select("id, trial_end, service, customers(name)")
@@ -185,7 +179,6 @@ export default async function DashboardPage({
     (r) => r.status === "overdue" || r.due_date < today,
   );
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
-  const toIssueRows = toIssue.data ?? [];
   // まだ送っていなくて、支払期限が今月・来月のもの。発行前(予定)も含めて先に準備できるようにする
   const unsentRows = [
     ...unpaidRows.filter(
@@ -380,85 +373,48 @@ export default async function DashboardPage({
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>発行待ちの請求書</CardTitle>
-            <Link href="/invoices">
-              <Button variant="outline" size="sm">請求一覧 →</Button>
-            </Link>
-          </CardHeader>
-          {toIssueRows.length === 0 ? (
-            <EmptyState title="今日発行すべき請求書はありません" />
-          ) : (
-            <CardBody className="px-2 pt-2">
-              <Table>
-                <thead>
-                  <tr>
-                    <TH>顧客</TH>
-                    <TH>発行予定日</TH>
-                    <TH numeric>金額</TH>
-                  </tr>
-                </thead>
-                <tbody>
-                  {toIssueRows.map((r) => (
-                    <TR key={r.id}>
-                      <TD className="font-semibold">{r.customers?.name}</TD>
-                      <TD className="text-ink-secondary">{r.issue_date}</TD>
-                      <TD numeric className="font-semibold">
-                        {formatJPY(r.total)}
-                      </TD>
-                    </TR>
-                  ))}
-                </tbody>
-              </Table>
-            </CardBody>
-          )}
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>トライアル終了間近</CardTitle>
-            <Link href="/deals?stage=trial">
-              <Button variant="outline" size="sm">商談一覧 →</Button>
-            </Link>
-          </CardHeader>
-          {trialRows.length === 0 ? (
-            <EmptyState title="14日以内に終了するトライアルはありません" />
-          ) : (
-            <CardBody className="px-2 pt-2">
-              <Table>
-                <thead>
-                  <tr>
-                    <TH>顧客</TH>
-                    <TH>サービス</TH>
-                    <TH>終了日</TH>
-                  </tr>
-                </thead>
-                <tbody>
-                  {trialRows.map((r) => (
-                    <TR key={r.id}>
-                      <TD className="font-semibold">
-                        <Link href={`/deals/${r.id}`} className="hover:underline">
-                          {r.customers?.name}
-                        </Link>
-                      </TD>
-                      <TD>
-                        <Badge variant={SERVICES[r.service].badge} dot>
-                          {SERVICES[r.service].label}
-                        </Badge>
-                      </TD>
-                      <TD className="font-semibold text-critical-deep">
-                        {r.trial_end}
-                      </TD>
-                    </TR>
-                  ))}
-                </tbody>
-              </Table>
-            </CardBody>
-          )}
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>トライアル終了間近</CardTitle>
+          <Link href="/deals?stage=trial">
+            <Button variant="outline" size="sm">商談一覧 →</Button>
+          </Link>
+        </CardHeader>
+        {trialRows.length === 0 ? (
+          <EmptyState title="14日以内に終了するトライアルはありません" />
+        ) : (
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>顧客</TH>
+                  <TH>サービス</TH>
+                  <TH>終了日</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {trialRows.map((r) => (
+                  <TR key={r.id}>
+                    <TD className="font-semibold">
+                      <Link href={`/deals/${r.id}`} className="hover:underline">
+                        {r.customers?.name}
+                      </Link>
+                    </TD>
+                    <TD>
+                      <Badge variant={SERVICES[r.service].badge} dot>
+                        {SERVICES[r.service].label}
+                      </Badge>
+                    </TD>
+                    <TD className="font-semibold text-critical-deep">
+                      {r.trial_end}
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        )}
+      </Card>
 
       {unsentRows.length > 0 && (
         <Card>
