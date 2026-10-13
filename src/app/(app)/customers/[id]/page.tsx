@@ -36,7 +36,7 @@ export default async function CustomerDetailPage({
       db.from("customers").select("*").eq("id", id).single(),
       db
         .from("deals")
-        .select("id, service, stage, title, amount_expected, competitor, competitor_expiry")
+        .select("id, service, stage, amount_expected, expected_billing_start")
         .eq("customer_id", id)
         .order("created_at", { ascending: false }),
       db
@@ -144,9 +144,11 @@ export default async function CustomerDetailPage({
                       <Badge variant={SERVICES[d.service].badge} dot>
                         {SERVICES[d.service].label}
                       </Badge>
-                      <span className="truncate text-sm font-semibold">
-                        {d.title ?? "(無題)"}
-                      </span>
+                      {d.expected_billing_start && (
+                        <span className="truncate text-sm text-ink-secondary">
+                          課金開始予定 {formatDate(d.expected_billing_start)}
+                        </span>
+                      )}
                     </span>
                     <span className="flex shrink-0 items-center gap-3">
                       {d.amount_expected != null && (

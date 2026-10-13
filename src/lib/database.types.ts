@@ -324,7 +324,6 @@ export type Database = {
           amount_expected: number | null
           closed_at: string | null
           competitor: string | null
-          competitor_expiry: string | null
           created_at: string
           customer_id: string
           expected_billing_start: string | null
@@ -333,7 +332,6 @@ export type Database = {
           note: string | null
           service: Database["public"]["Enums"]["service_tag"]
           stage: Database["public"]["Enums"]["deal_stage"]
-          title: string | null
           trial_end: string | null
           trial_start: string | null
           updated_at: string
@@ -342,7 +340,6 @@ export type Database = {
           amount_expected?: number | null
           closed_at?: string | null
           competitor?: string | null
-          competitor_expiry?: string | null
           created_at?: string
           customer_id: string
           expected_billing_start?: string | null
@@ -351,7 +348,6 @@ export type Database = {
           note?: string | null
           service: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
-          title?: string | null
           trial_end?: string | null
           trial_start?: string | null
           updated_at?: string
@@ -360,7 +356,6 @@ export type Database = {
           amount_expected?: number | null
           closed_at?: string | null
           competitor?: string | null
-          competitor_expiry?: string | null
           created_at?: string
           customer_id?: string
           expected_billing_start?: string | null
@@ -369,7 +364,6 @@ export type Database = {
           note?: string | null
           service?: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
-          title?: string | null
           trial_end?: string | null
           trial_start?: string | null
           updated_at?: string

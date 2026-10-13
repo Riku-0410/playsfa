@@ -21,7 +21,7 @@ const SORTS = {
   stage: "stage",
   amount: "amount_expected",
   trial_end: "trial_end",
-  competitor_expiry: "competitor_expiry",
+  billing_start: "expected_billing_start",
   created: "created_at",
   updated: "updated_at",
 };
@@ -51,7 +51,7 @@ export default async function DealsPage({
   let query = db
     .from("deals")
     .select(
-      "id, service, stage, title, amount_expected, trial_end, competitor, competitor_expiry, created_at, updated_at, customers!inner(id, name)",
+      "id, service, stage, amount_expected, trial_end, competitor, expected_billing_start, created_at, updated_at, customers!inner(id, name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -217,8 +217,8 @@ export default async function DealsPage({
                   />
                   <TH>競合</TH>
                   <SortableTH
-                    label="競合期限"
-                    sortKey="competitor_expiry"
+                    label="課金開始予定"
+                    sortKey="billing_start"
                     {...sortProps}
                   />
                   <SortableTH label="作成日" sortKey="created" {...sortProps} />
@@ -251,7 +251,7 @@ export default async function DealsPage({
                     <TD className="text-ink-secondary">{d.trial_end ?? "—"}</TD>
                     <TD className="text-ink-secondary">{d.competitor ?? "—"}</TD>
                     <TD className="text-ink-secondary">
-                      {d.competitor_expiry ?? "—"}
+                      {d.expected_billing_start ?? "—"}
                     </TD>
                     <TD className="text-ink-secondary">
                       {formatDateShort(d.created_at)}

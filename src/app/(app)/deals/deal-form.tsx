@@ -1,5 +1,6 @@
 import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
@@ -11,15 +12,49 @@ type DealDefaults = {
   customer_id?: string;
   service?: string;
   stage?: string;
-  title?: string | null;
   amount_expected?: number | null;
   trial_start?: string | null;
   trial_end?: string | null;
   competitor?: string | null;
-  competitor_expiry?: string | null;
   expected_billing_start?: string | null;
   lost_reason?: string | null;
 };
+
+/** 成約は契約作成で自動的に付くので選ばせない。成約済みの商談はステージを固定する */
+function StageField({ stage }: { stage?: string }) {
+  if (stage === "won") {
+    return (
+      <Field>
+        <Label>ステージ</Label>
+        <input type="hidden" name="stage" value="won" />
+        <div className="flex h-11 items-center">
+          <Badge variant={DEAL_STAGES.won.badge} dot>
+            {DEAL_STAGES.won.label}
+          </Badge>
+        </div>
+        <FieldHint>契約から自動で設定されています</FieldHint>
+      </Field>
+    );
+  }
+  return (
+    <Field>
+      <Label htmlFor="deal-stage">ステージ *</Label>
+      <Select
+        id="deal-stage"
+        name="stage"
+        required
+        defaultValue={stage ?? "lead"}
+      >
+        {Object.entries(DEAL_STAGES)
+          .filter(([k]) => k !== "won")
+          .map(([k, v]) => (
+            <option key={k} value={k}>{v.label}</option>
+          ))}
+      </Select>
+      <FieldHint>成約は契約を作成すると自動で付きます</FieldHint>
+    </Field>
+  );
+}
 
 export function DealForm({
   action,
@@ -68,19 +103,7 @@ export function DealForm({
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field>
-              <Label htmlFor="deal-stage">ステージ *</Label>
-              <Select
-                id="deal-stage"
-                name="stage"
-                required
-                defaultValue={deal?.stage ?? "lead"}
-              >
-                {Object.entries(DEAL_STAGES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
-              </Select>
-            </Field>
+            <StageField stage={deal?.stage} />
             <Field>
               <Label htmlFor="deal-amount">見込額(年・税抜)</Label>
               <Input
@@ -106,32 +129,11 @@ export function DealForm({
                 options={customers.map((c) => ({ value: c.id, label: c.name }))}
               />
             </Field>
-            <Field>
-              <Label htmlFor="deal-stage">ステージ *</Label>
-              <Select
-                id="deal-stage"
-                name="stage"
-                required
-                defaultValue={deal?.stage ?? "lead"}
-              >
-                {Object.entries(DEAL_STAGES).map(([k, v]) => (
-                  <option key={k} value={k}>{v.label}</option>
-                ))}
-              </Select>
-            </Field>
+            <StageField stage={deal?.stage} />
           </div>
           <ServiceAmountFields defaultService={deal?.service ?? "baskestats"} />
         </>
       )}
-      <Field>
-        <Label htmlFor="deal-title">タイトル</Label>
-        <Input
-          id="deal-title"
-          name="title"
-          placeholder="新チーム発足に伴う導入検討"
-          defaultValue={deal?.title ?? ""}
-        />
-      </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field>
           <Label htmlFor="deal-trial-start">トライアル開始</Label>
@@ -163,25 +165,16 @@ export function DealForm({
           />
         </Field>
         <Field>
-          <Label htmlFor="deal-competitor-expiry">競合の契約期限</Label>
+          <Label htmlFor="deal-billing-start">課金開始予定</Label>
           <Input
-            id="deal-competitor-expiry"
-            name="competitor_expiry"
+            id="deal-billing-start"
+            name="expected_billing_start"
             type="date"
-            defaultValue={deal?.competitor_expiry ?? ""}
+            defaultValue={deal?.expected_billing_start ?? ""}
           />
-          <FieldHint>課金開始月の根拠になります</FieldHint>
+          <FieldHint>競合の契約期限が目安。契約時の初期値になります</FieldHint>
         </Field>
       </div>
-      <Field>
-        <Label htmlFor="deal-billing-start">課金開始予定</Label>
-        <Input
-          id="deal-billing-start"
-          name="expected_billing_start"
-          type="date"
-          defaultValue={deal?.expected_billing_start ?? ""}
-        />
-      </Field>
       <Field>
         <Label htmlFor="deal-lost-reason">失注理由</Label>
         <Input

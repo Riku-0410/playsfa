@@ -141,8 +141,22 @@ export async function deleteContract(formData: FormData) {
     }
   }
 
+  const { data: contract } = await db
+    .from("contracts")
+    .select("deal_id")
+    .eq("id", id)
+    .single();
   const { error } = await db.from("contracts").delete().eq("id", id);
   if (error) throw error;
+  // 成約は契約があることと対なので、契約を消したら商談を商談中に戻す
+  if (contract?.deal_id) {
+    await db
+      .from("deals")
+      .update({ stage: "negotiation", closed_at: null })
+      .eq("id", contract.deal_id)
+      .eq("stage", "won");
+    revalidatePath("/deals");
+  }
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/");

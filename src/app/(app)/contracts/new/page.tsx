@@ -27,7 +27,7 @@ export default async function NewContractPage({
     dealId
       ? db
           .from("deals")
-          .select("id, customer_id, service, amount_expected, competitor_expiry, expected_billing_start, customers(name)")
+          .select("id, customer_id, service, amount_expected, expected_billing_start, customers(name)")
           .eq("id", dealId)
           .single()
       : Promise.resolve({ data: null }),
@@ -155,7 +155,7 @@ export default async function NewContractPage({
                   type="date"
                   required
                   defaultValue={
-                    deal?.expected_billing_start ?? deal?.competitor_expiry ?? ""
+                    deal?.expected_billing_start ?? ""
                   }
                 />
                 <FieldHint>

@@ -14,11 +14,9 @@ function dealValues(formData: FormData) {
   return {
     customer_id: requiredStr(formData, "customer_id"),
     stage: requiredStr(formData, "stage") as Stage,
-    title: str(formData, "title"),
     trial_start: str(formData, "trial_start"),
     trial_end: str(formData, "trial_end"),
     competitor: str(formData, "competitor"),
-    competitor_expiry: str(formData, "competitor_expiry"),
     expected_billing_start: str(formData, "expected_billing_start"),
     lost_reason: str(formData, "lost_reason"),
   };
@@ -34,6 +32,9 @@ export async function createDeal(formData: FormData) {
     throw new Error("サービスを1つ以上選択してください");
   }
   const values = dealValues(formData);
+  if (values.stage === "won") {
+    throw new Error("成約は契約の作成で設定されます");
+  }
   const { data, error } = await db
     .from("deals")
     .insert(
@@ -73,6 +74,11 @@ export async function updateDeal(formData: FormData) {
     .select("stage, closed_at")
     .eq("id", id)
     .single();
+  // 成約は契約作成でのみ付く。成約済みはステージを動かさない
+  if (before?.stage === "won") values.stage = "won";
+  else if (values.stage === "won") {
+    throw new Error("成約は契約の作成で設定されます");
+  }
   const isClosed = values.stage === "won" || values.stage === "lost";
   const closed = !isClosed
     ? { closed_at: null }

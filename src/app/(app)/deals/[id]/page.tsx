@@ -86,7 +86,6 @@ export default async function DealDetailPage({
             "商談"
           )
         }
-        description={deal.title ?? undefined}
         actions={
           <>
             <Badge variant={SERVICES[deal.service].badge} dot>
@@ -129,7 +128,7 @@ export default async function DealDetailPage({
         <Card className="bg-night text-night-ink">
           <CardBody className="flex items-center justify-between gap-4 py-5">
             <p className="text-sm">
-              合意できたら契約へ。課金開始日と請求スケジュールはそこで確定する。
+              合意できたら契約を作成。課金開始日と請求スケジュールを確定し、商談は自動で成約になる。
             </p>
             <Link
               href={`/contracts/new?deal=${deal.id}`}
