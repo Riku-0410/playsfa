@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { createMissingInvoice, endContract } from "./contracts/actions";
-import { markSent, registerPayment } from "./invoices/actions";
+import { issueInvoice, markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
 /** KPIカードの系列。チャートと同じ固定順・固定色 */
@@ -100,8 +100,9 @@ export default async function DashboardPage({
   const nextYM = addMonths(kpiYM, 1);
   const soon = addDaysJST(14);
   const [ty, tm, td] = today.split("-").map(Number);
+  const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps] =
+  const [monthInvoices, unpaid, toIssue, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming] =
     await Promise.all([
       db
         .from("invoices")
@@ -111,7 +112,7 @@ export default async function DashboardPage({
         .neq("status", "void"),
       db
         .from("invoices")
-        .select("id, total, due_date, invoice_number, status, sent_at, customers(name)")
+        .select("id, total, issue_date, due_date, invoice_number, status, sent_at, customers(name)")
         .in("status", ["issued", "sent", "overdue"])
         .order("due_date"),
       db
@@ -150,6 +151,13 @@ export default async function DashboardPage({
         .select("id, service, billing_start_date, term_months, customers(name)")
         .eq("status", "active"),
       findPipelineGaps(db),
+      // 送付待ちに出す、期限が今月・来月でまだ発行前のもの
+      db
+        .from("invoices")
+        .select("id, total, issue_date, due_date, invoice_number, status, sent_at, customers(name)")
+        .eq("status", "scheduled")
+        .gte("due_date", monthStart)
+        .lte("due_date", nextMonthEnd),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -178,15 +186,17 @@ export default async function DashboardPage({
   );
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const toIssueRows = toIssue.data ?? [];
-  // 発行済みだが未送付で、支払期限が今月・来月のもの(半期・年払いの前倒し発行など)
-  const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
-  const unsentRows = unpaidRows.filter(
-    (r) =>
-      !r.sent_at &&
-      r.status !== "sent" &&
-      r.due_date >= monthStart &&
-      r.due_date <= nextMonthEnd,
-  );
+  // まだ送っていなくて、支払期限が今月・来月のもの。発行前(予定)も含めて先に準備できるようにする
+  const unsentRows = [
+    ...unpaidRows.filter(
+      (r) =>
+        !r.sent_at &&
+        r.status !== "sent" &&
+        r.due_date >= monthStart &&
+        r.due_date <= nextMonthEnd,
+    ),
+    ...(upcoming.data ?? []),
+  ].sort((a, b) => a.due_date.localeCompare(b.due_date));
   const trialRows = trials.data ?? [];
 
   // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
@@ -472,7 +482,13 @@ export default async function DashboardPage({
               <tbody>
                 {unsentRows.map((r) => (
                   <TR key={r.id}>
-                    <TD className="font-semibold">{r.invoice_number ?? "—"}</TD>
+                    <TD className="font-semibold">
+                      {r.invoice_number ?? (
+                        <span className="text-xs font-normal text-ink-muted">
+                          {r.issue_date} 発行予定
+                        </span>
+                      )}
+                    </TD>
                     <TD>{r.customers?.name}</TD>
                     <TD
                       className={
@@ -488,12 +504,21 @@ export default async function DashboardPage({
                     </TD>
                     <TD>
                       <div className="flex flex-wrap gap-1.5">
-                        <form action={markSent}>
-                          <input type="hidden" name="id" value={r.id} />
-                          <Button size="sm" variant="dark" type="submit">
-                            送付済に
-                          </Button>
-                        </form>
+                        {r.status === "scheduled" ? (
+                          <form action={issueInvoice}>
+                            <input type="hidden" name="id" value={r.id} />
+                            <Button size="sm" variant="outline" type="submit">
+                              今すぐ発行
+                            </Button>
+                          </form>
+                        ) : (
+                          <form action={markSent}>
+                            <input type="hidden" name="id" value={r.id} />
+                            <Button size="sm" variant="dark" type="submit">
+                              送付済に
+                            </Button>
+                          </form>
+                        )}
                         <Link href={`/invoices/${r.id}/print`}>
                           <Button size="sm" variant="ghost">表示</Button>
                         </Link>

@@ -91,11 +91,11 @@ export default async function InvoicesPage({
     .order("id")
     .range(from, to);
   if (status === "unsent") {
-    // 前倒し発行(半期・年払いなど)したのにまだ送っていないもの。期限が今月・来月の分
+    // まだ送っていないもの(発行前の予定も含む)。期限が今月・来月の分
     const { start } = monthBoundsJST();
     const { end } = monthBoundsJST(addMonths(start.slice(0, 7), 1));
     query = query
-      .in("status", ["issued", "overdue"])
+      .in("status", ["scheduled", "issued", "overdue"])
       .is("sent_at", null)
       .gte("due_date", start)
       .lte("due_date", end);
