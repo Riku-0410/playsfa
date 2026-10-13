@@ -37,7 +37,7 @@ export async function issueInvoice(formData: FormData) {
   refresh();
 }
 
-/** まとめる: 同じ顧客の未発行請求書を1枚に */
+/** まとめる: 同じ顧客の送付前(予定・発行済)の請求書を1枚に */
 export async function mergeInvoices(formData: FormData) {
   const db = createAdminClient();
   const ids = formData.getAll("ids").map(String).filter(Boolean);

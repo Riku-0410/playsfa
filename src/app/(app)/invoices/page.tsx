@@ -12,6 +12,7 @@ import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
+import { MERGEABLE_STATUSES } from "@/lib/invoices";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addMonths, monthBoundsJST } from "@/lib/dates";
@@ -129,7 +130,7 @@ export default async function InvoicesPage({
         description={
           contract
             ? "この契約の請求書(自動生成されたスケジュール)"
-            : `${total}件 ・ 同じ顧客の未発行請求書は選択して1枚にまとめられます`
+            : `${total}件 ・ 同じ顧客の送付前の請求書は選択して1枚にまとめられます`
         }
         actions={
           contract ? (
@@ -245,7 +246,7 @@ export default async function InvoicesPage({
                   return (
                     <TR key={inv.id}>
                       <TD>
-                        {inv.status === "scheduled" && inv.customers && (
+                        {MERGEABLE_STATUSES.includes(inv.status) && inv.customers && (
                           <MergeCheckbox
                             id={inv.id}
                             customerId={inv.customers.id}

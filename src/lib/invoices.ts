@@ -19,6 +19,9 @@ type ItemRow = {
   sort_order: number;
 };
 
+/** まとめられるのはお客さんに渡す前の請求書 */
+export const MERGEABLE_STATUSES: readonly string[] = ["scheduled", "issued"];
+
 const minOf = (xs: string[]) => [...xs].sort()[0];
 const maxOf = (xs: string[]) => [...xs].sort().at(-1);
 
@@ -58,8 +61,9 @@ export async function activateContractsOf(db: Db, invoiceId: string) {
 }
 
 /**
- * 同じ顧客の未発行(scheduled)請求書を1枚にまとめる。
- * 発行日が最も早いものを残し、他の明細を移して合計を再計算。残りは削除。
+ * 同じ顧客の請求書を1枚にまとめる。お客さんに渡す前(予定・発行済)だけが対象。
+ * 発行済みがあれば最も早い発行済みを残してその番号を使う(他の発行済みの番号は欠番になる)。
+ * なければ発行日が最も早いものを残す。他の明細を移して合計を再計算し、残りは削除。
  * 対象期間は全体の最早開始〜最遅終了、支払期限は発行月の末日に揃える。
  */
 export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
@@ -76,8 +80,8 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
   if (!invoices || invoices.length !== uniq.length) {
     throw new Error("選択した請求書が見つかりません");
   }
-  if (invoices.some((i) => i.status !== "scheduled")) {
-    throw new Error("まとめられるのは未発行(予定)の請求書だけです");
+  if (invoices.some((i) => !MERGEABLE_STATUSES.includes(i.status))) {
+    throw new Error("まとめられるのは送付前(予定・発行済)の請求書だけです");
   }
   if (new Set(invoices.map((i) => i.customer_id)).size > 1) {
     throw new Error("同じ顧客の請求書だけをまとめられます");
@@ -91,7 +95,8 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
       a.issue_date.localeCompare(b.issue_date) ||
       a.created_at.localeCompare(b.created_at),
   );
-  const [primary, ...others] = sorted;
+  const primary = sorted.find((i) => i.status === "issued") ?? sorted[0];
+  const others = sorted.filter((i) => i.id !== primary.id);
 
   // 明細は「残す請求書の行 → 発行日順に他の行」の順で並べ直す
   let order = primary.invoice_items.length;
@@ -123,6 +128,8 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
     .delete()
     .in("id", others.map((i) => i.id));
   if (delError) throw delError;
+  // 発行済みに寄せたなら、移ってきた契約も発行と同じ扱いで課金中へ
+  if (primary.status === "issued") await activateContractsOf(db, primary.id);
 
   return primary.id;
 }
