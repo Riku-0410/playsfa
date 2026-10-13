@@ -79,7 +79,7 @@ export default async function NewContractPage({
       )}
 
       <CardInset className="p-4 text-xs text-ink-secondary">
-        登録と同時に、契約期間分の請求書が「予定」として自動生成されます。
+        登録と同時に、契約期間分の請求書が「未送付」として自動生成されます。
         年払いは1本、半期払いは2本。支払期限は発行月の末日。
       </CardInset>
 

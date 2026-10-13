@@ -16,7 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { createMissingInvoice, endContract } from "./contracts/actions";
-import { issueInvoice, markSent, registerPayment } from "./invoices/actions";
+import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
 /** KPIカードの系列。チャートと同じ固定順・固定色 */
@@ -112,8 +112,8 @@ export default async function DashboardPage({
         .neq("status", "void"),
       db
         .from("invoices")
-        .select("id, total, issue_date, due_date, invoice_number, status, sent_at, customers(name)")
-        .in("status", ["issued", "sent", "overdue"])
+        .select("id, total, due_date, invoice_number, status, customers(name)")
+        .in("status", ["sent", "overdue"])
         .order("due_date"),
       db
         .from("deals")
@@ -145,13 +145,13 @@ export default async function DashboardPage({
         .select("id, service, billing_start_date, term_months, customers(name)")
         .eq("status", "active"),
       findPipelineGaps(db),
-      // 送付待ちに出す、期限が今月・来月でまだ発行前のもの
+      // 送付待ち: 未送付で期限が来月末まで(期限を過ぎてしまったものも含む)
       db
         .from("invoices")
-        .select("id, total, issue_date, due_date, invoice_number, status, sent_at, customers(name)")
-        .eq("status", "scheduled")
-        .gte("due_date", monthStart)
-        .lte("due_date", nextMonthEnd),
+        .select("id, total, issue_date, due_date, invoice_number, customers(name)")
+        .eq("status", "unsent")
+        .lte("due_date", nextMonthEnd)
+        .order("due_date"),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -168,7 +168,7 @@ export default async function DashboardPage({
     .sort((a, b) => a.endDate.localeCompare(b.endDate));
 
   const monthTotal = (monthInvoices.data ?? []).reduce((a, r) => a + r.total, 0);
-  // 今月の入金残 = 期限が今月でまだ入金されていない分(未発行のscheduledも含む)
+  // 今月の入金残 = 期限が今月でまだ入金されていない分(未送付も含む)
   const monthRemaining = (monthInvoices.data ?? [])
     .filter((r) => r.status !== "paid")
     .reduce((a, r) => a + r.total, 0);
@@ -179,17 +179,7 @@ export default async function DashboardPage({
     (r) => r.status === "overdue" || r.due_date < today,
   );
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
-  // まだ送っていなくて、支払期限が今月・来月のもの。発行前(予定)も含めて先に準備できるようにする
-  const unsentRows = [
-    ...unpaidRows.filter(
-      (r) =>
-        !r.sent_at &&
-        r.status !== "sent" &&
-        r.due_date >= monthStart &&
-        r.due_date <= nextMonthEnd,
-    ),
-    ...(upcoming.data ?? []),
-  ].sort((a, b) => a.due_date.localeCompare(b.due_date));
+  const unsentRows = upcoming.data ?? [];
   const trialRows = trials.data ?? [];
 
   // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
@@ -423,8 +413,8 @@ export default async function DashboardPage({
       {unsentRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>送付待ちの請求書(今月・来月期限) {unsentRows.length}件</CardTitle>
-            <Link href="/invoices?status=unsent&sort=due">
+            <CardTitle>送付待ちの請求書(来月末までの期限) {unsentRows.length}件</CardTitle>
+            <Link href="/invoices?status=to_send&sort=due">
               <Button variant="outline" size="sm">請求一覧で見る →</Button>
             </Link>
           </CardHeader>
@@ -432,8 +422,8 @@ export default async function DashboardPage({
             <Table>
               <thead>
                 <tr>
-                  <TH>請求番号</TH>
                   <TH>顧客</TH>
+                  <TH>発行日</TH>
                   <TH>支払期限</TH>
                   <TH numeric>金額</TH>
                   <TH>アクション</TH>
@@ -442,14 +432,8 @@ export default async function DashboardPage({
               <tbody>
                 {unsentRows.map((r) => (
                   <TR key={r.id}>
-                    <TD className="font-semibold">
-                      {r.invoice_number ?? (
-                        <span className="text-xs font-normal text-ink-muted">
-                          {r.issue_date} 発行予定
-                        </span>
-                      )}
-                    </TD>
-                    <TD>{r.customers?.name}</TD>
+                    <TD className="font-semibold">{r.customers?.name}</TD>
+                    <TD className="text-ink-secondary">{r.issue_date}</TD>
                     <TD
                       className={
                         r.due_date < today
@@ -464,24 +448,15 @@ export default async function DashboardPage({
                     </TD>
                     <TD>
                       <div className="flex flex-wrap gap-1.5">
-                        {r.status === "scheduled" ? (
-                          <form action={issueInvoice}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <Button size="sm" variant="outline" type="submit">
-                              今すぐ発行
-                            </Button>
-                          </form>
-                        ) : (
-                          <ConfirmForm
-                            action={markSent}
-                            message={`合計 ${formatJPY(r.total)}(税込)で送付済にします。仮の金額のままになっていませんか？`}
-                          >
-                            <input type="hidden" name="id" value={r.id} />
-                            <Button size="sm" variant="dark" type="submit">
-                              送付済に
-                            </Button>
-                          </ConfirmForm>
-                        )}
+                        <ConfirmForm
+                          action={markSent}
+                          message={`合計 ${formatJPY(r.total)}(税込)で送付済にします${r.invoice_number ? "" : "(請求番号が付きます)"}。仮の金額のままになっていませんか？`}
+                        >
+                          <input type="hidden" name="id" value={r.id} />
+                          <Button size="sm" variant="dark" type="submit">
+                            送付済に
+                          </Button>
+                        </ConfirmForm>
                         <Link href={`/invoices/${r.id}/print`}>
                           <Button size="sm" variant="ghost">表示</Button>
                         </Link>
@@ -601,7 +576,7 @@ export default async function DashboardPage({
                             ) : (
                               <ConfirmForm
                                 action={createMissingInvoice}
-                                message={`${ps}開始の請求期間の請求書を作成します。${ps <= today ? "開始日を過ぎているので明朝の日次バッチで発行(採番)されます。" : ""}よろしいですか？`}
+                                message={`${ps}開始の請求期間の請求書を作成します。よろしいですか？`}
                               >
                                 <input type="hidden" name="id" value={g.contractId} />
                                 <input type="hidden" name="period_start" value={ps} />
@@ -677,7 +652,7 @@ export default async function DashboardPage({
                         </Link>
                         <ConfirmForm
                           action={endContract}
-                          message="この契約を「満了」にします。未発行の請求書があれば無効化されます。よろしいですか？"
+                          message="この契約を「満了」にします。未送付の請求書があれば無効化されます。よろしいですか？"
                         >
                           <input type="hidden" name="id" value={c.id} />
                           <Button size="sm" variant="ghost" type="submit">

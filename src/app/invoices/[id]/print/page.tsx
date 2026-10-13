@@ -70,7 +70,7 @@ export default async function InvoicePrintPage({
 
       {!invoice.invoice_number && (
         <div className="mx-auto mb-6 w-[210mm] max-w-full rounded-inner bg-warn-soft px-5 py-3 text-sm text-warn-deep print:hidden">
-          この請求書は未発行のため、請求番号がまだ採番されていません。請求一覧の「発行」を押すと採番されます(このまま印刷した場合、請求番号の行は出力されません)。
+          この請求書はまだ請求番号が付いていません。「送付済に」を押すと番号が付きます(このまま印刷した場合、請求番号の行は出力されません)。
         </div>
       )}
 
@@ -108,7 +108,7 @@ export default async function InvoicePrintPage({
               <p>請求番号: {invoice.invoice_number}</p>
             ) : (
               <p className="text-ink-muted print:hidden">
-                請求番号: (発行時に採番)
+                請求番号: (送付時に採番)
               </p>
             )}
             <p>発行日: {invoice.issue_date}</p>

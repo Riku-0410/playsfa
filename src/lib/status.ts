@@ -26,8 +26,7 @@ export const CONTRACT_STATUSES = {
 } satisfies Record<string, StatusMeta>;
 
 export const INVOICE_STATUSES = {
-  scheduled: { label: "予定", badge: "neutral" },
-  issued: { label: "発行済", badge: "warn" },
+  unsent: { label: "未送付", badge: "warn" },
   sent: { label: "送付済", badge: "accent" },
   paid: { label: "入金済", badge: "good" },
   overdue: { label: "期限超過", badge: "critical" },

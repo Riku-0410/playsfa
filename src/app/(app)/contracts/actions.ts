@@ -13,7 +13,7 @@ import {
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import {
-  dropContractFromScheduled,
+  dropContractFromUnsent,
   hasInvoiceWithStatus,
   invoiceIdsOfContract,
 } from "@/lib/invoices";
@@ -73,7 +73,7 @@ export async function createContract(formData: FormData) {
 
 /**
  * 契約の編集。金額・課金開始・サイクルは請求書が生成済みのため変更不可。
- * 満了・解約に変えたときは未発行の請求を止める(その契約だけの請求書は無効化、相乗りは行を落とす)。
+ * 満了・解約に変えたときは未送付の請求を止める(その契約だけの請求書は無効化、相乗りは行を落とす)。
  */
 export async function updateContract(formData: FormData) {
   const db = createAdminClient();
@@ -106,7 +106,7 @@ export async function updateContract(formData: FormData) {
     })
     .eq("id", id);
   if (error) throw error;
-  if (stopping) await dropContractFromScheduled(db, id, "void");
+  if (stopping) await dropContractFromUnsent(db, id, "void");
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/");
@@ -114,8 +114,8 @@ export async function updateContract(formData: FormData) {
 
 /**
  * 契約の削除。請求書は明細経由で紐づくので明示的に消す。
- * 入金済みがあればブロック。未発行の相乗り請求書はこの契約の行だけ落とす。
- * 発行済みの請求書はその契約だけのものなら削除、相乗りなら票面を変えずに残す(行の契約IDはnullになる)。
+ * 入金済みがあればブロック。未送付の相乗り請求書はこの契約の行だけ落とす。
+ * 送付済みの請求書はその契約だけのものなら削除、相乗りなら票面を変えずに残す(行の契約IDはnullになる)。
  */
 export async function deleteContract(formData: FormData) {
   const db = createAdminClient();
@@ -123,9 +123,9 @@ export async function deleteContract(formData: FormData) {
   if (await hasInvoiceWithStatus(db, id, "paid")) {
     throw new Error("入金済みの請求書がある契約は削除できません");
   }
-  await dropContractFromScheduled(db, id, "delete");
+  await dropContractFromUnsent(db, id, "delete");
 
-  // 発行済み・無効などで残った請求書のうち、この契約だけのものは削除
+  // 送付済み・無効などで残った請求書のうち、この契約だけのものは削除
   const remaining = await invoiceIdsOfContract(db, id);
   if (remaining.length > 0) {
     const { data: rows } = await db
@@ -186,7 +186,7 @@ export async function renewContract(formData: FormData) {
   redirect(`/invoices?contract=${id}`);
 }
 
-/** 更新されなかった契約を満了にする。未発行の請求書は残っていない前提(残っていれば無効化) */
+/** 更新されなかった契約を満了にする。未送付の請求書は残っていない前提(残っていれば無効化) */
 export async function endContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
@@ -196,7 +196,7 @@ export async function endContract(formData: FormData) {
     .eq("id", id)
     .in("status", ["active", "pending"]);
   if (error) throw error;
-  await dropContractFromScheduled(db, id, "void");
+  await dropContractFromUnsent(db, id, "void");
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/reports");

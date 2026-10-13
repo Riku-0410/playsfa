@@ -78,7 +78,7 @@ export default async function RenewContractPage({
           次期 {nextStart} 〜 {nextEnd}(12ヶ月)
         </p>
         <p className="text-xs text-ink-muted">
-          契約はそのまま期間が12ヶ月延び、次期分の請求書が「予定」として生成されます。
+          契約はそのまま期間が12ヶ月延び、次期分の請求書が「未送付」として生成されます。
           過去の請求書は変わりません。条件が変わった場合はここで直してください。
           新しい契約として登録し直す場合は、旧契約をダッシュボードか編集画面から「満了」にしてください。
         </p>

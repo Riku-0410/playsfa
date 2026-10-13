@@ -14,9 +14,9 @@ import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   deleteInvoice,
+  markSent,
   restoreInvoice,
   splitInvoice,
-  unissueInvoice,
   unpayInvoice,
   unsendInvoice,
   updateInvoice,
@@ -52,7 +52,8 @@ export default async function EditInvoicePage({
     const c = items.find((it) => it.contract_id === cid)?.contracts;
     return { id: cid, service: c?.service };
   });
-  const mergeable = invoice.status === "scheduled" && contracts.length >= 2;
+  const unsent = invoice.status === "unsent";
+  const mergeable = unsent && contracts.length >= 2;
   // 利用料行の金額を変えたとき「契約の請求額にも反映するか」を聞くための現在値
   const contractAmounts = Object.fromEntries(
     items
@@ -63,7 +64,7 @@ export default async function EditInvoicePage({
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
-        title={`請求書 ${invoice.invoice_number ?? "(未採番)"}`}
+        title={`請求書 ${invoice.invoice_number ?? "(送付時に採番)"}`}
         description={`${invoice.customers?.name} ・ ${formatJPY(invoice.total)}`}
         actions={
           <>
@@ -87,17 +88,20 @@ export default async function EditInvoicePage({
           <CardTitle>ステータス操作</CardTitle>
         </CardHeader>
         <CardBody className="flex flex-wrap gap-2">
-          {["issued", "overdue"].includes(invoice.status) && (
+          {unsent && (
             <ConfirmForm
-              action={unissueInvoice}
-              message="発行を取り消して「予定」に戻します。請求番号は欠番になります。よろしいですか？"
+              action={markSent}
+              message={`合計 ${formatJPY(invoice.total)}(税込)で送付済にします${invoice.invoice_number ? "" : "(請求番号が付きます)"}。仮の金額のままになっていませんか？`}
             >
               <input type="hidden" name="id" value={invoice.id} />
-              <Button variant="outline" size="sm" type="submit">発行を取り消す</Button>
+              <Button variant="dark" size="sm" type="submit">送付済にする</Button>
             </ConfirmForm>
           )}
-          {invoice.status === "sent" && (
-            <ConfirmForm action={unsendInvoice} message="送付を取り消して「発行済」に戻しますか？">
+          {["sent", "overdue"].includes(invoice.status) && (
+            <ConfirmForm
+              action={unsendInvoice}
+              message="送付を取り消して「未送付」に戻しますか？(請求番号はそのまま)"
+            >
               <input type="hidden" name="id" value={invoice.id} />
               <Button variant="outline" size="sm" type="submit">送付を取り消す</Button>
             </ConfirmForm>
@@ -111,7 +115,7 @@ export default async function EditInvoicePage({
               <Button variant="outline" size="sm" type="submit">入金を取り消す</Button>
             </ConfirmForm>
           )}
-          {["scheduled", "issued", "sent", "overdue"].includes(invoice.status) && (
+          {["unsent", "sent", "overdue"].includes(invoice.status) && (
             <ConfirmForm
               action={voidInvoice}
               message="この請求書を無効にします(解約時など)。よろしいですか？"
@@ -121,9 +125,9 @@ export default async function EditInvoicePage({
             </ConfirmForm>
           )}
           {invoice.status === "void" && (
-            <ConfirmForm action={restoreInvoice} message="無効を取り消して「予定」に戻しますか？">
+            <ConfirmForm action={restoreInvoice} message="無効を取り消して「未送付」に戻しますか？">
               <input type="hidden" name="id" value={invoice.id} />
-              <Button variant="outline" size="sm" type="submit">予定に戻す</Button>
+              <Button variant="outline" size="sm" type="submit">未送付に戻す</Button>
             </ConfirmForm>
           )}
           {mergeable && (
@@ -152,17 +156,19 @@ export default async function EditInvoicePage({
               <input type="hidden" name="id" value={invoice.id} />
               <div className="grid grid-cols-2 gap-4">
                 <Field>
-                  <Label htmlFor="ie-issue">発行(予定)日</Label>
+                  <Label htmlFor="ie-issue">発行日</Label>
                   <Input
                     id="ie-issue"
                     name="issue_date"
                     type="date"
                     required
-                    disabled={invoice.status !== "scheduled"}
+                    disabled={!unsent}
                     defaultValue={invoice.issue_date}
                   />
-                  {invoice.status !== "scheduled" && (
-                    <FieldHint>発行済みのため変更不可</FieldHint>
+                  {unsent ? (
+                    <FieldHint>請求書に印字される日付</FieldHint>
+                  ) : (
+                    <FieldHint>送付済みのため変更不可</FieldHint>
                   )}
                 </Field>
                 <Field>

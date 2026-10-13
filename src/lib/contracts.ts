@@ -38,7 +38,7 @@ export class DuplicateContractError extends Error {
 }
 
 /**
- * 契約を登録し、契約期間分の請求書(明細付き)を scheduled で先行生成する。
+ * 契約を登録し、契約期間分の請求書(明細付き)を未送付で先行生成する。
  * 初期費用・年間費用は初回請求に明細行として載る。
  * 途中で失敗したら契約ごと巻き戻す。
  * - 同じ顧客・サービスで期間の重なる契約があれば DuplicateContractError(継続なら「更新」を使う)
@@ -137,7 +137,7 @@ export async function createContractWithInvoices(
         ...d,
         customer_id: input.customer_id,
         tax_rate: input.tax_rate,
-        status: "scheduled" as const,
+        status: "unsent" as const,
       })),
     )
     .select("id, issue_date");
@@ -234,7 +234,7 @@ export async function renewContract(
         ...d,
         customer_id: c.customer_id,
         tax_rate: c.tax_rate,
-        status: "scheduled" as const,
+        status: "unsent" as const,
       })),
     )
     .select("id, issue_date");
@@ -292,7 +292,7 @@ export async function renewContract(
  * 請求書が欠けている請求期間の分を1本作る(登録漏れの補填)。
  * - 利用料行は契約の現在の金額。契約の初回期間なら初期費用・年間費用も載せる
  *   (更新期の毎年費用は判別できないので載せない。必要なら請求書の編集で足す)
- * - 期間開始が過去なら発行予定日は今日(翌朝の日次バッチで採番される)
+ * - 期間開始が過去なら発行日は今日
  */
 export async function createInvoiceForPeriod(
   db: SupabaseClient<Database>,
@@ -342,7 +342,7 @@ export async function createInvoiceForPeriod(
       due_date: dueDateForYmd(issueDate),
       customer_id: c.customer_id,
       tax_rate: c.tax_rate,
-      status: "scheduled" as const,
+      status: "unsent" as const,
     })
     .select("id")
     .single();
@@ -375,7 +375,7 @@ async function contractInvoiceRows(db: SupabaseClient<Database>, contractId: str
 
 /**
  * 課金開始日を変えられない理由。変えられるなら null。
- * 請求書がすべて「予定」で、他の契約とまとめていないときだけ変えられる。
+ * 請求書がすべて未送付で、他の契約とまとめていないときだけ変えられる。
  */
 export async function billingStartBlocker(
   db: SupabaseClient<Database>,
@@ -388,8 +388,8 @@ export async function billingStartBlocker(
   if (rows.some((r) => r.invoices.status === "paid")) {
     return "入金済みの請求書があるため変えられません";
   }
-  if (rows.some((r) => r.invoices.status !== "scheduled")) {
-    return "発行済みの請求書があるため変えられません。請求一覧の「発行取消」で予定に戻すと変えられます";
+  if (rows.some((r) => r.invoices.status !== "unsent")) {
+    return "送付済みの請求書があるため変えられません。請求書の「送付を取り消す」で未送付に戻すと変えられます";
   }
   if (
     rows.some((r) =>
@@ -404,7 +404,7 @@ export async function billingStartBlocker(
 }
 
 /**
- * 課金開始日の変更。予定の請求書を新しい開始日に合わせてずらす
+ * 課金開始日の変更。未送付の請求書を新しい開始日に合わせてずらす
  * (発行日・支払期限・請求期間・利用料行の期間と文言)。金額や手で足した行はそのまま。
  */
 export async function changeBillingStart(

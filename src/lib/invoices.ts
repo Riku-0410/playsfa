@@ -6,7 +6,7 @@ type Db = SupabaseClient<Database>;
 
 /**
  * 請求書は顧客単位。どの契約の分かは明細行(invoice_items.contract_id)が持つ。
- * ここには「複数契約を1枚にまとめる/戻す」と「契約側の変化を未発行の請求書に反映する」をまとめる。
+ * ここには「複数契約を1枚にまとめる/戻す」と「契約の停止・削除を未送付の請求書に反映する」をまとめる。
  */
 
 type ItemRow = {
@@ -19,8 +19,6 @@ type ItemRow = {
   sort_order: number;
 };
 
-/** まとめられるのはお客さんに渡す前の請求書 */
-export const MERGEABLE_STATUSES: readonly string[] = ["scheduled", "issued"];
 
 const minOf = (xs: string[]) => [...xs].sort()[0];
 const maxOf = (xs: string[]) => [...xs].sort().at(-1);
@@ -45,7 +43,7 @@ export async function recalcInvoice(db: Db, invoiceId: string) {
   if (upError) throw upError;
 }
 
-/** 請求書の発行に伴い、明細に載っている課金待ちの契約を課金中へ */
+/** 請求書の送付に伴い、明細に載っている課金待ちの契約を課金中へ */
 export async function activateContractsOf(db: Db, invoiceId: string) {
   const { data: items } = await db
     .from("invoice_items")
@@ -61,8 +59,8 @@ export async function activateContractsOf(db: Db, invoiceId: string) {
 }
 
 /**
- * 同じ顧客の請求書を1枚にまとめる。お客さんに渡す前(予定・発行済)だけが対象。
- * 発行済みがあれば最も早い発行済みを残してその番号を使う(他の発行済みの番号は欠番になる)。
+ * 同じ顧客の未送付の請求書を1枚にまとめる。
+ * 請求番号の付いたものがあれば最も早いものを残してその番号を使う(他の番号は欠番になる)。
  * なければ発行日が最も早いものを残す。他の明細を移して合計を再計算し、残りは削除。
  * 対象期間は全体の最早開始〜最遅終了、支払期限は発行月の末日に揃える。
  */
@@ -73,15 +71,15 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
   const { data: invoices, error } = await db
     .from("invoices")
     .select(
-      "id, customer_id, status, tax_rate, issue_date, period_start, period_end, created_at, invoice_items(id, sort_order)",
+      "id, customer_id, status, invoice_number, tax_rate, issue_date, period_start, period_end, created_at, invoice_items(id, sort_order)",
     )
     .in("id", uniq);
   if (error) throw error;
   if (!invoices || invoices.length !== uniq.length) {
     throw new Error("選択した請求書が見つかりません");
   }
-  if (invoices.some((i) => !MERGEABLE_STATUSES.includes(i.status))) {
-    throw new Error("まとめられるのは送付前(予定・発行済)の請求書だけです");
+  if (invoices.some((i) => i.status !== "unsent")) {
+    throw new Error("まとめられるのは未送付の請求書だけです");
   }
   if (new Set(invoices.map((i) => i.customer_id)).size > 1) {
     throw new Error("同じ顧客の請求書だけをまとめられます");
@@ -95,7 +93,7 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
       a.issue_date.localeCompare(b.issue_date) ||
       a.created_at.localeCompare(b.created_at),
   );
-  const primary = sorted.find((i) => i.status === "issued") ?? sorted[0];
+  const primary = sorted.find((i) => i.invoice_number) ?? sorted[0];
   const others = sorted.filter((i) => i.id !== primary.id);
 
   // 明細は「残す請求書の行 → 発行日順に他の行」の順で並べ直す
@@ -128,14 +126,12 @@ export async function mergeInvoices(db: Db, ids: string[]): Promise<string> {
     .delete()
     .in("id", others.map((i) => i.id));
   if (delError) throw delError;
-  // 発行済みに寄せたなら、移ってきた契約も発行と同じ扱いで課金中へ
-  if (primary.status === "issued") await activateContractsOf(db, primary.id);
 
   return primary.id;
 }
 
 /**
- * まとめた請求書を契約ごとに分け直す(未発行のみ)。
+ * まとめた請求書を契約ごとに分け直す(未送付のみ)。
  * 明細の契約IDでグループ化し、期間が最も早いグループを元の請求書に残して他は新規請求書へ。
  * 契約に紐づかない行(手で足した行)は元の請求書に残る。
  */
@@ -148,8 +144,8 @@ export async function splitInvoice(db: Db, invoiceId: string): Promise<string[]>
     .eq("id", invoiceId)
     .single();
   if (error) throw error;
-  if (inv.status !== "scheduled") {
-    throw new Error("分けられるのは未発行(予定)の請求書だけです");
+  if (inv.status !== "unsent") {
+    throw new Error("分けられるのは未送付の請求書だけです");
   }
 
   const groups = new Map<string, ItemRow[]>();
@@ -186,7 +182,7 @@ export async function splitInvoice(db: Db, invoiceId: string): Promise<string[]>
         period_end: end,
         issue_date: start,
         due_date: dueDateForYmd(start),
-        status: "scheduled",
+        status: "unsent",
         ...calcTotals(items, Number(inv.tax_rate)),
       })
       .select("id")
@@ -224,10 +220,10 @@ export async function splitInvoice(db: Db, invoiceId: string): Promise<string[]>
 }
 
 /**
- * 契約の未発行請求を止める(解約・削除時)。
+ * 契約の未送付の請求を止める(満了・削除時)。
  * その契約だけの請求書は mode に従って無効化 or 削除、他契約と相乗りしている請求書はその契約の行だけ落として再計算。
  */
-export async function dropContractFromScheduled(
+export async function dropContractFromUnsent(
   db: Db,
   contractId: string,
   mode: "void" | "delete",
@@ -236,7 +232,7 @@ export async function dropContractFromScheduled(
     .from("invoice_items")
     .select("id, invoice_id, invoices!inner(status)")
     .eq("contract_id", contractId)
-    .eq("invoices.status", "scheduled");
+    .eq("invoices.status", "unsent");
   if (error) throw error;
   const invoiceIds = [...new Set((items ?? []).map((it) => it.invoice_id))];
   if (invoiceIds.length === 0) return;

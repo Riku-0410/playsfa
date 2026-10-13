@@ -63,7 +63,7 @@ export function MergeToolbar({
       ? "同じ顧客の請求書だけをまとめられます"
       : ids.length < 2
         ? "もう1枚選ぶとまとめられます"
-        : `${ids.length}枚を1枚にまとめます(発行済みがあればその番号に寄せます)`;
+        : `${ids.length}枚を1枚にまとめます(請求番号付きがあればその番号に寄せます)`;
 
   return (
     <div className="sticky bottom-4 z-10 mx-auto flex w-fit items-center gap-4 rounded-full bg-night px-5 py-2.5 text-sm text-night-ink shadow-card">
@@ -71,7 +71,7 @@ export function MergeToolbar({
       <form
         action={action}
         onSubmit={(e) => {
-          if (!window.confirm(`選択した${ids.length}枚の請求書を1枚にまとめます。発行済みが複数ある場合、残す1枚以外の請求番号は欠番になります。よろしいですか？`)) {
+          if (!window.confirm(`選択した${ids.length}枚の請求書を1枚にまとめます。請求番号の付いたものが複数ある場合、残す1枚以外の番号は欠番になります。よろしいですか？`)) {
             e.preventDefault();
           }
         }}

@@ -94,7 +94,7 @@ export default async function ReportsPage() {
   for (const r of invRes.data ?? []) {
     const key = r.due_date.slice(0, 7);
     const arr = billing.get(key) ?? [0, 0];
-    arr[r.status === "scheduled" ? 1 : 0] += r.total;
+    arr[r.status === "unsent" ? 1 : 0] += r.total;
     billing.set(key, arr);
   }
 
@@ -119,7 +119,7 @@ export default async function ReportsPage() {
         ? 0
         : r.status === "overdue" || r.due_date < today
           ? 1
-          : r.status === "scheduled"
+          : r.status === "unsent"
             ? 3
             : 2;
     addUnpaid(r.due_date.slice(0, 7), si, r.total);
@@ -243,7 +243,7 @@ export default async function ReportsPage() {
         <CardHeader>
           <CardTitle>月別請求額</CardTitle>
           <p className="text-xs text-ink-muted">
-            支払期限(締切日)ベース・税込。確定=発行済み〜入金済み、薄い色の予定=未発行分(売上見込)
+            支払期限(締切日)ベース・税込。確定=送付済み〜入金済み、薄い色の予定=未送付分(売上見込)
           </p>
         </CardHeader>
         <CardBody>
@@ -260,7 +260,7 @@ export default async function ReportsPage() {
         <CardHeader>
           <CardTitle>月別入金予測(解約0%想定)</CardTitle>
           <p className="text-xs text-ink-muted">
-            実際の請求書に加え、全契約が更新され続ける前提の将来請求(12ヶ月先まで)を支払期限月で集計・税込。グレー=入金済み、請求済み=発行〜送付済み、薄い色の予定=未発行分+更新見込み、赤=期限超過
+            実際の請求書に加え、全契約が更新され続ける前提の将来請求(12ヶ月先まで)を支払期限月で集計・税込。グレー=入金済み、請求済み=送付済み、薄い色の予定=未送付分+更新見込み、赤=期限超過
           </p>
         </CardHeader>
         <CardBody>

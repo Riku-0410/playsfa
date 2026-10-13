@@ -60,7 +60,7 @@ export default async function EditContractPage({
           {contractEndDate(contract.billing_start_date, contract.term_months)}
         </span>
         <span className="text-xs text-ink-muted">
-          金額・サイクルは請求書が生成済みのため変更不可。課金開始日は請求書がすべて予定のうちは変えられます。
+          金額・サイクルは請求書が生成済みのため変更不可。課金開始日は請求書がすべて未送付のうちは変えられます。
           更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で、作り直しは削除→再登録で。
         </span>
       </CardInset>
@@ -113,7 +113,7 @@ export default async function EditContractPage({
                     <option key={k} value={k}>{v.label}</option>
                   ))}
               </Select>
-              <FieldHint>更新されなかった契約は「満了」に。期の途中で終わった場合も同じです。未発行の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
+              <FieldHint>更新されなかった契約は「満了」に。期の途中で終わった場合も同じです。未送付の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
             </Field>
             <div className="flex justify-end pt-2">
               <Button type="submit">保存する</Button>

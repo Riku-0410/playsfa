@@ -12,17 +12,14 @@ import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
-import { MERGEABLE_STATUSES } from "@/lib/invoices";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addMonths, monthBoundsJST } from "@/lib/dates";
 import { ConfirmForm } from "@/components/confirm-form";
 import {
-  issueInvoice,
   markSent,
   mergeInvoices,
   registerPayment,
-  unissueInvoice,
   unpayInvoice,
   unsendInvoice,
 } from "./actions";
@@ -31,9 +28,8 @@ import { MergeCheckbox, MergeProvider, MergeToolbar } from "./merge-select";
 export const dynamic = "force-dynamic";
 
 const FILTERS: Record<string, string> = {
-  scheduled: "予定",
-  unsent: "送付待ち(今月・来月期限)",
-  issued: "発行済",
+  to_send: "送付待ち(来月末までの期限)",
+  unsent: "未送付(すべて)",
   sent: "送付済",
   unpaid: "未入金",
   paid: "入金済",
@@ -90,17 +86,13 @@ export default async function InvoicesPage({
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
-  if (status === "unsent") {
-    // まだ送っていないもの(発行前の予定も含む)。期限が今月・来月の分
+  if (status === "to_send") {
+    // 未送付で、期限が来月末まで(過ぎてしまったものも含む)
     const { start } = monthBoundsJST();
     const { end } = monthBoundsJST(addMonths(start.slice(0, 7), 1));
-    query = query
-      .in("status", ["scheduled", "issued", "overdue"])
-      .is("sent_at", null)
-      .gte("due_date", start)
-      .lte("due_date", end);
+    query = query.eq("status", "unsent").lte("due_date", end);
   } else if (status === "unpaid") {
-    query = query.in("status", ["issued", "sent", "overdue"]);
+    query = query.in("status", ["sent", "overdue"]);
   } else if (status && status in INVOICE_STATUSES) {
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
@@ -130,7 +122,7 @@ export default async function InvoicesPage({
         description={
           contract
             ? "この契約の請求書(自動生成されたスケジュール)"
-            : `${total}件 ・ 同じ顧客の送付前の請求書は選択して1枚にまとめられます`
+            : `${total}件 ・ 同じ顧客の未送付の請求書は選択して1枚にまとめられます`
         }
         actions={
           contract ? (
@@ -237,16 +229,20 @@ export default async function InvoicesPage({
                   ).filter((s) =>
                     inv.invoice_items.some((it) => it.contracts?.service === s),
                   );
+                  const unsent = inv.status === "unsent";
                   const overdue =
-                    ["issued", "sent"].includes(inv.status) &&
-                    inv.due_date < today;
-                  const st = overdue
-                    ? INVOICE_STATUSES.overdue
-                    : INVOICE_STATUSES[inv.status];
+                    (unsent || inv.status === "sent") && inv.due_date < today;
+                  // 未送付でも発行日がまだ先のものは、急ぎではないので無彩色
+                  const st =
+                    inv.status === "sent" && overdue
+                      ? INVOICE_STATUSES.overdue
+                      : unsent && inv.issue_date > today
+                        ? { ...INVOICE_STATUSES.unsent, badge: "neutral" as const }
+                        : INVOICE_STATUSES[inv.status];
                   return (
                     <TR key={inv.id}>
                       <TD>
-                        {MERGEABLE_STATUSES.includes(inv.status) && inv.customers && (
+                        {unsent && inv.customers && (
                           <MergeCheckbox
                             id={inv.id}
                             customerId={inv.customers.id}
@@ -301,17 +297,10 @@ export default async function InvoicesPage({
                       </TD>
                       <TD>
                         <div className="flex flex-wrap gap-1.5">
-                          {inv.status === "scheduled" && (
-                            <form action={issueInvoice}>
-                              <input type="hidden" name="id" value={inv.id} />
-                              <Button size="sm" type="submit">発行</Button>
-                            </form>
-                          )}
-                          {(inv.status === "issued" ||
-                            (inv.status === "overdue" && !inv.sent_at)) && (
+                          {unsent && (
                             <ConfirmForm
                               action={markSent}
-                              message={`合計 ${formatJPY(inv.total)}(税込)で送付済にします。仮の金額のままになっていませんか？`}
+                              message={`合計 ${formatJPY(inv.total)}(税込)で送付済にします${inv.invoice_number ? "" : "(請求番号が付きます)"}。仮の金額のままになっていませんか？`}
                             >
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="dark" type="submit">
@@ -319,7 +308,7 @@ export default async function InvoicesPage({
                               </Button>
                             </ConfirmForm>
                           )}
-                          {["issued", "sent", "overdue"].includes(inv.status) && (
+                          {["sent", "overdue"].includes(inv.status) && (
                             <form action={registerPayment}>
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="outline" type="submit">
@@ -327,21 +316,10 @@ export default async function InvoicesPage({
                               </Button>
                             </form>
                           )}
-                          {["issued", "overdue"].includes(inv.status) && (
-                            <ConfirmForm
-                              action={unissueInvoice}
-                              message="発行を取り消して「予定」に戻します。よろしいですか？"
-                            >
-                              <input type="hidden" name="id" value={inv.id} />
-                              <Button size="sm" variant="ghost" type="submit">
-                                発行取消
-                              </Button>
-                            </ConfirmForm>
-                          )}
-                          {inv.status === "sent" && (
+                          {["sent", "overdue"].includes(inv.status) && (
                             <ConfirmForm
                               action={unsendInvoice}
-                              message="送付を取り消して「発行済」に戻しますか？"
+                              message="送付を取り消して「未送付」に戻しますか？(請求番号はそのまま)"
                             >
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="ghost" type="submit">

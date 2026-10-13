@@ -18,26 +18,7 @@ function refresh() {
   revalidatePath("/");
 }
 
-/** 発行: 請求番号を採番して issued へ(発行予定日はそのまま) */
-export async function issueInvoice(formData: FormData) {
-  const db = createAdminClient();
-  const id = requiredStr(formData, "id");
-  const today = todayJST();
-  const invoiceNumber = await nextInvoiceNumber(db, Number(today.slice(0, 4)));
-
-  const { error } = await db
-    .from("invoices")
-    .update({ invoice_number: invoiceNumber, status: "issued" })
-    .eq("id", id)
-    .eq("status", "scheduled");
-  if (error) throw error;
-
-  // 初回発行と同時に、載っている契約を課金中へ
-  await activateContractsOf(db, id);
-  refresh();
-}
-
-/** まとめる: 同じ顧客の送付前(予定・発行済)の請求書を1枚に */
+/** まとめる: 同じ顧客の未送付の請求書を1枚に */
 export async function mergeInvoices(formData: FormData) {
   const db = createAdminClient();
   const ids = formData.getAll("ids").map(String).filter(Boolean);
@@ -52,31 +33,18 @@ export async function splitInvoice(formData: FormData) {
   const id = requiredStr(formData, "id");
   await splitInvoiceRows(db, id);
   refresh();
-  redirect("/invoices?status=scheduled");
+  redirect("/invoices?status=unsent");
 }
 
-/** 発行取消: 予定に戻して請求番号を返上(欠番になるが番号は再利用されない) */
-export async function unissueInvoice(formData: FormData) {
-  const db = createAdminClient();
-  const id = requiredStr(formData, "id");
-  const { error } = await db
-    .from("invoices")
-    .update({ invoice_number: null, status: "scheduled" })
-    .eq("id", id)
-    .in("status", ["issued", "overdue"]);
-  if (error) throw error;
-  refresh();
-}
-
-/** 送付取消: 発行済に戻す */
+/** 送付取消: 未送付に戻す(請求番号はそのまま。送り直すと同じ番号) */
 export async function unsendInvoice(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const { error } = await db
     .from("invoices")
-    .update({ status: "issued", sent_at: null })
+    .update({ status: "unsent", sent_at: null })
     .eq("id", id)
-    .eq("status", "sent");
+    .in("status", ["sent", "overdue"]);
   if (error) throw error;
   refresh();
 }
@@ -99,13 +67,11 @@ export async function unpayInvoice(formData: FormData) {
     .eq("invoice_id", id);
   if (payError) throw payError;
 
-  const today = todayJST();
-  const status =
-    invoice.due_date < today
+  const status = !invoice.sent_at
+    ? ("unsent" as const)
+    : invoice.due_date < todayJST()
       ? ("overdue" as const)
-      : invoice.sent_at
-        ? ("sent" as const)
-        : ("issued" as const);
+      : ("sent" as const);
   const { error } = await db
     .from("invoices")
     .update({ status, paid_at: null })
@@ -114,7 +80,7 @@ export async function unpayInvoice(formData: FormData) {
   refresh();
 }
 
-/** 無効化: 解約後の請求などを止める(発行前のみ) */
+/** 無効化: 解約後の請求などを止める */
 export async function voidInvoice(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
@@ -122,18 +88,18 @@ export async function voidInvoice(formData: FormData) {
     .from("invoices")
     .update({ status: "void" })
     .eq("id", id)
-    .in("status", ["scheduled", "issued", "sent", "overdue"]);
+    .in("status", ["unsent", "sent", "overdue"]);
   if (error) throw error;
   refresh();
 }
 
-/** 無効の取り消し: 予定に戻す(番号は返上) */
+/** 無効の取り消し: 未送付に戻す(請求番号はそのまま) */
 export async function restoreInvoice(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const { error } = await db
     .from("invoices")
-    .update({ status: "scheduled", invoice_number: null, sent_at: null })
+    .update({ status: "unsent", sent_at: null })
     .eq("id", id)
     .eq("status", "void");
   if (error) throw error;
@@ -193,7 +159,7 @@ export async function updateInvoice(formData: FormData) {
   const { error } = await db
     .from("invoices")
     .update({
-      ...(invoice.status === "scheduled"
+      ...(invoice.status === "unsent"
         ? { issue_date: requiredStr(formData, "issue_date") }
         : {}),
       due_date: requiredStr(formData, "due_date"),
@@ -229,24 +195,35 @@ export async function updateInvoice(formData: FormData) {
   refresh();
 }
 
+/**
+ * 送付: 請求番号がまだなければ採番して送付済へ(番号は送付取消・無効で戻しても返上しない)。
+ * 載っている課金待ちの契約は課金中に。期限を過ぎてから送ったものは翌朝の日次バッチで期限超過になる
+ */
 export async function markSent(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
-  const sentAt = new Date().toISOString();
+  const { data: invoice, error: fetchError } = await db
+    .from("invoices")
+    .select("status, invoice_number")
+    .eq("id", id)
+    .single();
+  if (fetchError) throw fetchError;
+  if (invoice.status !== "unsent") throw new Error("未送付の請求書ではありません");
+
+  const invoiceNumber =
+    invoice.invoice_number ??
+    (await nextInvoiceNumber(db, Number(todayJST().slice(0, 4))));
   const { error } = await db
     .from("invoices")
-    .update({ status: "sent", sent_at: sentAt })
+    .update({
+      invoice_number: invoiceNumber,
+      status: "sent",
+      sent_at: new Date().toISOString(),
+    })
     .eq("id", id)
-    .eq("status", "issued");
+    .eq("status", "unsent");
   if (error) throw error;
-  // 送る前に期限超過になったもの: ステータスは期限超過のまま送付日だけ記録
-  const { error: overdueError } = await db
-    .from("invoices")
-    .update({ sent_at: sentAt })
-    .eq("id", id)
-    .eq("status", "overdue")
-    .is("sent_at", null);
-  if (overdueError) throw overdueError;
+  await activateContractsOf(db, id);
   refresh();
 }
 
@@ -262,7 +239,7 @@ export async function registerPayment(formData: FormData) {
     .eq("id", id)
     .single();
   if (fetchError) throw fetchError;
-  if (!["issued", "sent", "overdue"].includes(invoice.status)) {
+  if (!["sent", "overdue"].includes(invoice.status)) {
     throw new Error("入金登録できないステータスです");
   }
 

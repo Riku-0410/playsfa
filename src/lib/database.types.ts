@@ -578,13 +578,7 @@ export type Database = {
         | "won"
         | "lost"
       gender_category: "mens" | "womens" | "mixed"
-      invoice_status:
-        | "scheduled"
-        | "issued"
-        | "sent"
-        | "paid"
-        | "overdue"
-        | "void"
+      invoice_status: "unsent" | "sent" | "paid" | "overdue" | "void"
       service_tag: "playcut" | "baskestats"
     }
     CompositeTypes: {
@@ -721,14 +715,7 @@ export const Constants = {
       contract_status: ["pending", "active", "ended", "churned"],
       deal_stage: ["lead", "contacted", "trial", "negotiation", "won", "lost"],
       gender_category: ["mens", "womens", "mixed"],
-      invoice_status: [
-        "scheduled",
-        "issued",
-        "sent",
-        "paid",
-        "overdue",
-        "void",
-      ],
+      invoice_status: ["unsent", "sent", "paid", "overdue", "void"],
       service_tag: ["playcut", "baskestats"],
     },
   },

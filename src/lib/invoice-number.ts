@@ -3,7 +3,7 @@ import type { Database } from "@/lib/database.types";
 
 /**
  * INV-{年}-{連番3桁} を採番する。
- * 既存の最大番号+1(発行取消で欠番が出ても衝突しない)。
+ * 既存の最大番号+1(まとめ・削除で欠番が出ても衝突しない)。
  */
 export async function nextInvoiceNumber(
   db: SupabaseClient<Database>,
