@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { Field, FieldHint, Label } from "@/components/ui/field";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate } from "@/lib/billing";
 import { formatJPY } from "@/lib/format";
@@ -70,26 +70,17 @@ export default async function EditContractPage({
         <CardBody>
           <SaveForm action={updateContract} fallback="/contracts" className="space-y-4">
             <input type="hidden" name="id" value={contract.id} />
-            <div className="grid grid-cols-2 gap-4">
-              <Field>
-                <Label htmlFor="ce-plan">プラン名</Label>
-                <Input
-                  id="ce-plan"
-                  name="plan_name"
-                  defaultValue={contract.plan_name ?? ""}
-                />
-              </Field>
-              <Field>
-                <Label htmlFor="ce-agreement">契約合意日</Label>
-                <Input
-                  id="ce-agreement"
-                  name="agreement_date"
-                  type="date"
-                  required
-                  defaultValue={contract.agreement_date}
-                />
-              </Field>
-            </div>
+            <Field>
+              <Label htmlFor="ce-agreement">契約合意日</Label>
+              <Input
+                id="ce-agreement"
+                name="agreement_date"
+                type="date"
+                required
+                defaultValue={contract.agreement_date}
+                className="max-w-xs"
+              />
+            </Field>
             <Field>
               <Label htmlFor="ce-status">ステータス</Label>
               <Select
@@ -105,14 +96,6 @@ export default async function EditContractPage({
                   ))}
               </Select>
               <FieldHint>更新されなかった契約は「満了」に。期の途中で終わった場合も同じです。未発行の請求は自動で止まります(この契約だけの請求書は無効化、他サービスと1枚にまとめた請求書はこの契約の行だけ外れます)</FieldHint>
-            </Field>
-            <Field>
-              <Label htmlFor="ce-note">メモ</Label>
-              <Textarea
-                id="ce-note"
-                name="note"
-                defaultValue={contract.note ?? ""}
-              />
             </Field>
             <div className="flex justify-end pt-2">
               <Button type="submit">保存する</Button>

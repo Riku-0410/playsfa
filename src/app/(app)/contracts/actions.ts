@@ -44,13 +44,11 @@ export async function createContract(formData: FormData) {
       customer_id: customerId,
       deal_id: dealId,
       service: requiredStr(formData, "service") as "playcut" | "baskestats",
-      plan_name: str(formData, "plan_name"),
       billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
       amount_per_billing: amount,
-      tax_rate: num(formData, "tax_rate") ?? 10,
+      tax_rate: 10,
       agreement_date: requiredStr(formData, "agreement_date"),
       billing_start_date: requiredStr(formData, "billing_start_date"),
-      note: str(formData, "note"),
       fees: parseFees(formData),
     }));
   } catch (e) {
@@ -93,12 +91,10 @@ export async function updateContract(formData: FormData) {
   const { error } = await db
     .from("contracts")
     .update({
-      plan_name: str(formData, "plan_name"),
       agreement_date: requiredStr(formData, "agreement_date"),
       status,
       churned_at:
         status === "churned" ? (before.churned_at ?? todayJST()) : null,
-      note: str(formData, "note"),
     })
     .eq("id", id);
   if (error) throw error;
@@ -171,7 +167,6 @@ export async function renewContract(formData: FormData) {
   if (!amount || amount <= 0) throw new Error("請求額が不正です");
   await renewContractRecord(db, {
     id,
-    plan_name: str(formData, "plan_name"),
     billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
     amount_per_billing: amount,
     agreement_date: requiredStr(formData, "agreement_date"),

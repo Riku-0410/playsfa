@@ -172,8 +172,6 @@ export type Database = {
           customer_id: string
           deal_id: string | null
           id: string
-          note: string | null
-          plan_name: string | null
           service: Database["public"]["Enums"]["service_tag"]
           status: Database["public"]["Enums"]["contract_status"]
           tax_rate: number
@@ -190,8 +188,6 @@ export type Database = {
           customer_id: string
           deal_id?: string | null
           id?: string
-          note?: string | null
-          plan_name?: string | null
           service: Database["public"]["Enums"]["service_tag"]
           status?: Database["public"]["Enums"]["contract_status"]
           tax_rate?: number
@@ -208,8 +204,6 @@ export type Database = {
           customer_id?: string
           deal_id?: string | null
           id?: string
-          note?: string | null
-          plan_name?: string | null
           service?: Database["public"]["Enums"]["service_tag"]
           status?: Database["public"]["Enums"]["contract_status"]
           tax_rate?: number

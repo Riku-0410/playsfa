@@ -25,7 +25,7 @@ export default async function ReceiptPrintPage({
     db
       .from("invoices")
       .select(
-        "*, invoice_items(description, amount, sort_order, contract_id, contracts(service, plan_name)), customers(name, billing_name, billing_address), payments(paid_on, amount)",
+        "*, invoice_items(description, amount, sort_order, contract_id, contracts(service)), customers(name, billing_name, billing_address), payments(paid_on, amount)",
       )
       .eq("id", id)
       .single(),
@@ -58,7 +58,7 @@ export default async function ReceiptPrintPage({
         .map((it) => [it.contract_id, it.contracts!] as const),
     ).values(),
   ].map(
-    (c) => `${SERVICES[c.service].label}${c.plan_name ? ` ${c.plan_name}` : ""}`,
+    (c) => SERVICES[c.service].label,
   );
   const description =
     items.length === 1

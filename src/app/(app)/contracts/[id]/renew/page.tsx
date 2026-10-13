@@ -111,14 +111,6 @@ export default async function RenewContractPage({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Field>
-                  <Label htmlFor="cr-plan">プラン名</Label>
-                  <Input
-                    id="cr-plan"
-                    name="plan_name"
-                    defaultValue={contract.plan_name ?? ""}
-                  />
-                </Field>
-                <Field>
                   <Label htmlFor="cr-agreement">更新合意日 *</Label>
                   <Input
                     id="cr-agreement"

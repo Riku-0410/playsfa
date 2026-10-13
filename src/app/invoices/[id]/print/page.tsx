@@ -23,7 +23,7 @@ export default async function InvoicePrintPage({
     db
       .from("invoices")
       .select(
-        "*, invoice_items(description, amount, sort_order, contract_id, contracts(service, billing_cycle, plan_name)), customers(name, billing_name, billing_address)",
+        "*, invoice_items(description, amount, sort_order, contract_id, contracts(service, billing_cycle)), customers(name, billing_name, billing_address)",
       )
       .eq("id", id)
       .single(),
@@ -37,7 +37,7 @@ export default async function InvoicePrintPage({
     (a, b) => a.sort_order - b.sort_order,
   );
   const fillerRows = Math.max(0, MIN_ITEM_ROWS - items.length);
-  // 票面の脚注に出す契約(サービス・プラン・サイクル)。まとめ請求なら並記
+  // 票面の脚注に出す契約(サービス・サイクル)。まとめ請求なら並記
   const contractNotes = [
     ...new Map(
       items
@@ -46,7 +46,7 @@ export default async function InvoicePrintPage({
     ).values(),
   ].map(
     (c) =>
-      `${SERVICES[c.service].label}${c.plan_name ? ` ${c.plan_name}` : ""} ・ ${BILLING_CYCLES[c.billing_cycle]}`,
+      `${SERVICES[c.service].label} ・ ${BILLING_CYCLES[c.billing_cycle]}`,
   );
   const billTo = invoice.customers?.billing_name || invoice.customers?.name;
   const taxRatePercent =

@@ -36,7 +36,7 @@ export default async function EditInvoicePage({
   const { data: invoice } = await db
     .from("invoices")
     .select(
-      "*, invoice_items(description, amount, sort_order, contract_id, period_start, period_end, contracts(service, plan_name)), customers(name)",
+      "*, invoice_items(description, amount, sort_order, contract_id, period_start, period_end, contracts(service)), customers(name)",
     )
     .eq("id", id)
     .single();
@@ -50,7 +50,7 @@ export default async function EditInvoicePage({
   // 載っている契約(サービス)。まとめ請求なら複数
   const contracts = contractIdsOf(items).map((cid) => {
     const c = items.find((it) => it.contract_id === cid)?.contracts;
-    return { id: cid, service: c?.service, plan: c?.plan_name };
+    return { id: cid, service: c?.service };
   });
   const mergeable = invoice.status === "scheduled" && contracts.length >= 2;
 
@@ -65,7 +65,6 @@ export default async function EditInvoicePage({
               c.service ? (
                 <Badge key={c.id} variant={SERVICES[c.service].badge} dot>
                   {SERVICES[c.service].label}
-                  {c.plan && ` ${c.plan}`}
                 </Badge>
               ) : null,
             )}

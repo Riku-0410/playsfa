@@ -19,14 +19,12 @@ export type NewContract = {
   customer_id: string;
   deal_id?: string | null;
   service: "playcut" | "baskestats";
-  plan_name?: string | null;
   billing_cycle: BillingCycle;
   amount_per_billing: number;
   tax_rate: number;
   agreement_date: string;
   billing_start_date: string;
   term_months?: number;
-  note?: string | null;
   fees?: ContractFee[];
 };
 
@@ -90,7 +88,6 @@ export async function createContractWithInvoices(
       customer_id: input.customer_id,
       deal_id: dealId,
       service: input.service,
-      plan_name: input.plan_name ?? null,
       billing_cycle: input.billing_cycle,
       amount_per_billing: input.amount_per_billing,
       tax_rate: input.tax_rate,
@@ -98,7 +95,6 @@ export async function createContractWithInvoices(
       billing_start_date: input.billing_start_date,
       term_months: termMonths,
       status: "pending",
-      note: input.note ?? null,
     })
     .select("id")
     .single();
@@ -178,7 +174,6 @@ export async function createContractWithInvoices(
 
 export type RenewContractInput = {
   id: string;
-  plan_name?: string | null;
   billing_cycle: BillingCycle;
   amount_per_billing: number;
   agreement_date: string;
@@ -189,7 +184,7 @@ export type RenewContractInput = {
  * 契約の更新。契約レコードは増やさず、期間を延ばして次期分の請求書を生成する。
  * - 次期の課金開始 = 現在の終了日の翌日
  * - 毎年かかる費用(recurring)は次期の初回請求に載る。初期費用は載らない
- * - プラン・金額・サイクルが変わったら契約の値を書き換え、変更内容をメモに残す
+ * - 金額・サイクルが変わったら契約の値を書き換え、変更内容を活動ログに残す
  *   (過去の請求書は明細に金額を持つので変わらない)
  * - 満了にしていた契約を更新した場合は課金中に戻す
  */
@@ -256,36 +251,37 @@ export async function renewContract(
     throw itemError;
   }
 
-  // 変更点をメモに残す(履歴テーブルは持たない)
+  // 変更点は活動ログに残す(履歴テーブルは持たない)
   const changes: string[] = [];
-  if ((input.plan_name ?? null) !== (c.plan_name ?? null)) {
-    changes.push(`プラン ${c.plan_name ?? "—"}→${input.plan_name ?? "—"}`);
-  }
   if (input.amount_per_billing !== c.amount_per_billing) {
     changes.push(`請求額/回 ${c.amount_per_billing.toLocaleString()}→${input.amount_per_billing.toLocaleString()}`);
   }
   if (input.billing_cycle !== c.billing_cycle) {
     changes.push(`サイクル ${BILLING_CYCLES[c.billing_cycle]}→${BILLING_CYCLES[input.billing_cycle]}`);
   }
-  const line = `${input.agreement_date} 更新(${nextStart}〜)${changes.length ? ": " + changes.join(", ") : ""}`;
-  const note = c.note ? `${c.note}\n${line}` : line;
 
   const { error: upError } = await db
     .from("contracts")
     .update({
-      plan_name: input.plan_name ?? null,
       billing_cycle: input.billing_cycle,
       amount_per_billing: input.amount_per_billing,
       agreement_date: input.agreement_date,
       term_months: c.term_months + addMonths,
       status: "active",
-      note,
     })
     .eq("id", c.id);
   if (upError) {
     await db.from("invoices").delete().in("id", inserted.map((r) => r.id));
     throw upError;
   }
+
+  await db.from("activities").insert({
+    customer_id: c.customer_id,
+    deal_id: c.deal_id,
+    type: "memo",
+    content: `${SERVICES[c.service].label}の契約を更新(${nextStart}〜)${changes.length ? ": " + changes.join(", ") : ""}`,
+    occurred_at: input.agreement_date,
+  });
 
   return { nextStart, invoiceCount: drafts.length };
 }

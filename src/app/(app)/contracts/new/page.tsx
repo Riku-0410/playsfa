@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { Field, FieldHint, Label } from "@/components/ui/field";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SearchSelect } from "@/components/ui/search-select";
 import { contractEndDate } from "@/lib/billing";
@@ -163,28 +163,9 @@ export default async function NewContractPage({
                 </FieldHint>
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field>
-                <Label htmlFor="ct-plan">プラン名</Label>
-                <Input id="ct-plan" name="plan_name" placeholder="スタンダード" />
-              </Field>
-              <Field>
-                <Label htmlFor="ct-tax">税率(%)</Label>
-                <Input
-                  id="ct-tax"
-                  name="tax_rate"
-                  inputMode="numeric"
-                  defaultValue="10"
-                />
-              </Field>
-            </div>
             <div className="border-t border-line pt-4">
               <FeeRows />
             </div>
-            <Field>
-              <Label htmlFor="ct-note">メモ</Label>
-              <Textarea id="ct-note" name="note" />
-            </Field>
             <div className="flex justify-end pt-2">
               <Button type="submit">契約を登録して請求を生成 →</Button>
             </div>
