@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import {
+  billingPeriod,
   computeInvoiceSchedule,
   contractEndDate,
   dueDateForYmd,
   nextTermStart,
   type BillingCycle,
 } from "@/lib/billing";
+import { todayJST } from "@/lib/dates";
 import { BILLING_CYCLES, SERVICES } from "@/lib/status";
 
 export type ContractFee = {
@@ -356,4 +358,129 @@ export async function createInvoiceForPeriod(
     throw itemError;
   }
   return inv.id;
+}
+
+/** 契約の明細行と、その請求書(無効は除く)。請求書に載っている全契約IDも引く */
+async function contractInvoiceRows(db: SupabaseClient<Database>, contractId: string) {
+  const { data, error } = await db
+    .from("invoice_items")
+    .select(
+      "id, invoice_id, description, period_start, period_end, invoices!inner(status, period_start, invoice_items(contract_id))",
+    )
+    .eq("contract_id", contractId)
+    .neq("invoices.status", "void");
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * 課金開始日を変えられない理由。変えられるなら null。
+ * 請求書がすべて「予定」で、他の契約とまとめていないときだけ変えられる。
+ */
+export async function billingStartBlocker(
+  db: SupabaseClient<Database>,
+  contract: { id: string; status: string },
+): Promise<string | null> {
+  if (contract.status === "ended" || contract.status === "churned") {
+    return "満了・解約した契約は課金開始日を変えられません";
+  }
+  const rows = await contractInvoiceRows(db, contract.id);
+  if (rows.some((r) => r.invoices.status === "paid")) {
+    return "入金済みの請求書があるため変えられません";
+  }
+  if (rows.some((r) => r.invoices.status !== "scheduled")) {
+    return "発行済みの請求書があるため変えられません。請求一覧の「発行取消」で予定に戻すと変えられます";
+  }
+  if (
+    rows.some((r) =>
+      r.invoices.invoice_items.some(
+        (it) => it.contract_id && it.contract_id !== contract.id,
+      ),
+    )
+  ) {
+    return "他の契約とまとめた請求書があるため変えられません。請求書の「契約ごとに分ける」で分けると変えられます";
+  }
+  return null;
+}
+
+/**
+ * 課金開始日の変更。予定の請求書を新しい開始日に合わせてずらす
+ * (発行日・支払期限・請求期間・利用料行の期間と文言)。金額や手で足した行はそのまま。
+ */
+export async function changeBillingStart(
+  db: SupabaseClient<Database>,
+  contractId: string,
+  newStart: string,
+) {
+  const { data: c, error } = await db
+    .from("contracts")
+    .select("id, status, billing_cycle, billing_start_date, term_months")
+    .eq("id", contractId)
+    .single();
+  if (error) throw error;
+  if (c.billing_start_date === newStart) return;
+  const blocker = await billingStartBlocker(db, c);
+  if (blocker) throw new Error(blocker);
+
+  // 旧開始日で何番目の請求期間か
+  const periodCount = Math.round(c.term_months / (c.billing_cycle === "annual" ? 12 : 6));
+  const indexOf = (periodStart: string) =>
+    Array.from({ length: periodCount }, (_, k) => k).find(
+      (k) => billingPeriod(c.billing_start_date, c.billing_cycle, k).start === periodStart,
+    );
+
+  const rows = await contractInvoiceRows(db, contractId);
+  const invoiceIndex = new Map<string, number>();
+  for (const r of rows) {
+    const k = indexOf(r.invoices.period_start);
+    if (k === undefined) {
+      throw new Error(
+        `請求期間が契約と合わない請求書(${r.invoices.period_start}〜)があるため、自動でずらせません`,
+      );
+    }
+    invoiceIndex.set(r.invoice_id, k);
+  }
+
+  for (const [invoiceId, k] of invoiceIndex) {
+    const p = billingPeriod(newStart, c.billing_cycle, k);
+    const { error: invError } = await db
+      .from("invoices")
+      .update({
+        period_start: p.start,
+        period_end: p.end,
+        issue_date: p.start,
+        due_date: dueDateForYmd(p.start),
+      })
+      .eq("id", invoiceId);
+    if (invError) throw invError;
+  }
+
+  for (const r of rows) {
+    if (!r.period_start || !r.period_end) continue; // 費用行は期間を持たない
+    const k = indexOf(r.period_start);
+    if (k === undefined) continue;
+    const p = billingPeriod(newStart, c.billing_cycle, k);
+    const { error: itemError } = await db
+      .from("invoice_items")
+      .update({
+        period_start: p.start,
+        period_end: p.end,
+        description: r.description.replace(
+          `${r.period_start}〜${r.period_end}`,
+          `${p.start}〜${p.end}`,
+        ),
+      })
+      .eq("id", r.id);
+    if (itemError) throw itemError;
+  }
+
+  const { error: upError } = await db
+    .from("contracts")
+    .update({
+      billing_start_date: newStart,
+      // 開始日を先に延ばしたら課金待ちに戻す。過ぎた日付なら日次バッチが課金中にする
+      status: newStart > todayJST() ? "pending" : c.status,
+    })
+    .eq("id", contractId);
+  if (upError) throw upError;
 }

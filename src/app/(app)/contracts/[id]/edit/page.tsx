@@ -9,6 +9,7 @@ import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate } from "@/lib/billing";
+import { billingStartBlocker } from "@/lib/contracts";
 import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -29,6 +30,7 @@ export default async function EditContractPage({
     .eq("id", id)
     .single();
   if (!contract) notFound();
+  const startBlocker = await billingStartBlocker(db, contract);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -58,7 +60,7 @@ export default async function EditContractPage({
           {contractEndDate(contract.billing_start_date, contract.term_months)}
         </span>
         <span className="text-xs text-ink-muted">
-          金額・サイクル・課金開始は請求書が生成済みのため変更不可。
+          金額・サイクルは請求書が生成済みのため変更不可。課金開始日は請求書がすべて予定のうちは変えられます。
           更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で、作り直しは削除→再登録で。
         </span>
       </CardInset>
@@ -70,17 +72,33 @@ export default async function EditContractPage({
         <CardBody>
           <SaveForm action={updateContract} fallback="/contracts" className="space-y-4">
             <input type="hidden" name="id" value={contract.id} />
-            <Field>
-              <Label htmlFor="ce-agreement">契約合意日</Label>
-              <Input
-                id="ce-agreement"
-                name="agreement_date"
-                type="date"
-                required
-                defaultValue={contract.agreement_date}
-                className="max-w-xs"
-              />
-            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field>
+                <Label htmlFor="ce-agreement">契約合意日</Label>
+                <Input
+                  id="ce-agreement"
+                  name="agreement_date"
+                  type="date"
+                  required
+                  defaultValue={contract.agreement_date}
+                />
+              </Field>
+              <Field>
+                <Label htmlFor="ce-billing-start">課金開始日</Label>
+                <Input
+                  id="ce-billing-start"
+                  name="billing_start_date"
+                  type="date"
+                  required
+                  disabled={!!startBlocker}
+                  defaultValue={contract.billing_start_date}
+                />
+                <FieldHint>
+                  {startBlocker ??
+                    "変えると予定の請求書の発行日・支払期限・請求期間も一緒にずれます(金額や手で足した行はそのまま)"}
+                </FieldHint>
+              </Field>
+            </div>
             <Field>
               <Label htmlFor="ce-status">ステータス</Label>
               <Select

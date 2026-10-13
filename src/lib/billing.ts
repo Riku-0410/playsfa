@@ -111,6 +111,17 @@ export function computeInvoiceSchedule(input: {
   });
 }
 
+/** 課金開始日から k 番目(0始まり)の請求期間 */
+export function billingPeriod(
+  billingStart: string,
+  cycle: BillingCycle,
+  k: number,
+): { start: string; end: string } {
+  const months = cycle === "annual" ? 12 : 6;
+  const start = addMonths(parseDate(billingStart), k * months);
+  return { start: fmt(start), end: fmt(addDays(addMonths(start, months), -1)) };
+}
+
 /** 契約終了日 = 課金開始日 + 契約月数 − 1日 */
 export const contractEndDate = (billingStart: string, termMonths: number) =>
   fmt(addDays(addMonths(parseDate(billingStart), termMonths), -1));

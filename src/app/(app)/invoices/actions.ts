@@ -213,6 +213,19 @@ export async function updateInvoice(formData: FormData) {
     .insert(items.map((it) => ({ ...it, invoice_id: id })));
   if (insError) throw insError;
 
+  // 「契約の請求額もこの金額に変更する」にチェックした利用料行(仮の金額で登録した契約の確定など)
+  for (const row of formData.getAll("sync_contract_row").map(Number)) {
+    const contractId = contractIds[row];
+    const amount = Number((amounts[row] ?? "").replace(/[,，]/g, ""));
+    if (!contractId || !periodStarts[row] || !(amount > 0)) continue;
+    const { error: syncError } = await db
+      .from("contracts")
+      .update({ amount_per_billing: amount })
+      .eq("id", contractId);
+    if (syncError) throw syncError;
+  }
+  revalidatePath("/contracts");
+  revalidatePath("/reports");
   refresh();
 }
 

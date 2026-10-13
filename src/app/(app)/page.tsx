@@ -512,12 +512,15 @@ export default async function DashboardPage({
                             </Button>
                           </form>
                         ) : (
-                          <form action={markSent}>
+                          <ConfirmForm
+                            action={markSent}
+                            message={`合計 ${formatJPY(r.total)}(税込)で送付済にします。仮の金額のままになっていませんか？`}
+                          >
                             <input type="hidden" name="id" value={r.id} />
                             <Button size="sm" variant="dark" type="submit">
                               送付済に
                             </Button>
-                          </form>
+                          </ConfirmForm>
                         )}
                         <Link href={`/invoices/${r.id}/print`}>
                           <Button size="sm" variant="ghost">表示</Button>

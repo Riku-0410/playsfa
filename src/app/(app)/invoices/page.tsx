@@ -309,12 +309,15 @@ export default async function InvoicesPage({
                           )}
                           {(inv.status === "issued" ||
                             (inv.status === "overdue" && !inv.sent_at)) && (
-                            <form action={markSent}>
+                            <ConfirmForm
+                              action={markSent}
+                              message={`合計 ${formatJPY(inv.total)}(税込)で送付済にします。仮の金額のままになっていませんか？`}
+                            >
                               <input type="hidden" name="id" value={inv.id} />
                               <Button size="sm" variant="dark" type="submit">
                                 送付済に
                               </Button>
-                            </form>
+                            </ConfirmForm>
                           )}
                           {["issued", "sent", "overdue"].includes(inv.status) && (
                             <form action={registerPayment}>

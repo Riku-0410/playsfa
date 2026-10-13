@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { BillingCycle } from "@/lib/billing";
 import {
+  changeBillingStart,
   createContractWithInvoices,
   createInvoiceForPeriod,
   DuplicateContractError,
@@ -86,13 +87,20 @@ export async function updateContract(formData: FormData) {
     .single();
   if (fetchError) throw fetchError;
 
+  const newStart = str(formData, "billing_start_date");
+  if (newStart) await changeBillingStart(db, id, newStart);
+
   const stopped = (st: string) => st === "churned" || st === "ended";
   const stopping = stopped(status) && !stopped(before.status);
   const { error } = await db
     .from("contracts")
     .update({
       agreement_date: requiredStr(formData, "agreement_date"),
-      status,
+      // 課金開始日を先に延ばしたなら課金待ちに戻す(フォームの課金中で上書きしない)
+      status:
+        status === "active" && newStart && newStart > todayJST()
+          ? "pending"
+          : status,
       churned_at:
         status === "churned" ? (before.churned_at ?? todayJST()) : null,
     })

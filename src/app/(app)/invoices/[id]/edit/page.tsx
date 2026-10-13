@@ -36,7 +36,7 @@ export default async function EditInvoicePage({
   const { data: invoice } = await db
     .from("invoices")
     .select(
-      "*, invoice_items(description, amount, sort_order, contract_id, period_start, period_end, contracts(service)), customers(name)",
+      "*, invoice_items(description, amount, sort_order, contract_id, period_start, period_end, contracts(service, amount_per_billing)), customers(name)",
     )
     .eq("id", id)
     .single();
@@ -53,6 +53,12 @@ export default async function EditInvoicePage({
     return { id: cid, service: c?.service };
   });
   const mergeable = invoice.status === "scheduled" && contracts.length >= 2;
+  // 利用料行の金額を変えたとき「契約の請求額にも反映するか」を聞くための現在値
+  const contractAmounts = Object.fromEntries(
+    items
+      .filter((it) => it.contract_id && it.contracts)
+      .map((it) => [it.contract_id!, it.contracts!.amount_per_billing]),
+  );
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -171,7 +177,7 @@ export default async function EditInvoicePage({
                 </Field>
               </div>
               <div className="border-t border-line pt-4">
-                <ItemRows initial={items} />
+                <ItemRows initial={items} contractAmounts={contractAmounts} />
               </div>
               <Field>
                 <Label htmlFor="ie-note">備考(請求書に印字)</Label>
