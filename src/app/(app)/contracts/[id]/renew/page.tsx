@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { SaveForm } from "@/components/save-form";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate, nextTermStart } from "@/lib/billing";
 import { todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
-import { BILLING_CYCLES, SERVICES } from "@/lib/status";
+import { BILLING_CYCLES, INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renewContract } from "../../actions";
 
@@ -28,6 +29,29 @@ export default async function RenewContractPage({
     .eq("id", id)
     .single();
   if (!contract) notFound();
+
+  // 前期 = 直近12ヶ月の契約期間。請求書は自由に編集されるので、契約の金額ではなく実際の明細を見せる
+  const termStart = nextTermStart(contract.billing_start_date, contract.term_months - 12);
+  const { data: itemRows } = await db
+    .from("invoice_items")
+    .select(
+      "id, description, amount, sort_order, invoices!inner(id, invoice_number, issue_date, period_start, period_end, status)",
+    )
+    .eq("contract_id", contract.id)
+    .gte("invoices.period_start", termStart)
+    .neq("invoices.status", "void");
+  const byInvoice = new Map<string, NonNullable<typeof itemRows>>();
+  for (const it of itemRows ?? []) {
+    byInvoice.set(it.invoices.id, [...(byInvoice.get(it.invoices.id) ?? []), it]);
+  }
+  const prevInvoices = [...byInvoice.values()]
+    .map((items) => ({
+      ...items[0].invoices,
+      items: items.sort((a, b) => a.sort_order - b.sort_order),
+      subtotal: items.reduce((sum, it) => sum + it.amount, 0),
+    }))
+    .sort((a, b) => a.issue_date.localeCompare(b.issue_date));
+  const prevTotal = prevInvoices.reduce((sum, inv) => sum + inv.subtotal, 0);
 
   const endDate = contractEndDate(contract.billing_start_date, contract.term_months);
   const nextStart = nextTermStart(contract.billing_start_date, contract.term_months);
@@ -59,6 +83,55 @@ export default async function RenewContractPage({
           新しい契約として登録し直す場合は、旧契約をダッシュボードか編集画面から「満了」にしてください。
         </p>
       </CardInset>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>前期の請求</CardTitle>
+        </CardHeader>
+        <CardBody className="space-y-3">
+          {prevInvoices.length === 0 ? (
+            <p className="text-sm text-ink-muted">
+              {termStart} 以降の請求書はありません
+            </p>
+          ) : (
+            <>
+              {prevInvoices.map((inv) => (
+                <div
+                  key={inv.id}
+                  className="rounded-inner border border-line/60 px-4 py-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <Link
+                      href={`/invoices/${inv.id}/edit`}
+                      className="text-sm font-semibold hover:underline"
+                    >
+                      {inv.invoice_number ?? "(未採番)"}
+                      <span className="ml-2 text-xs font-normal text-ink-muted">
+                        {inv.period_start} 〜 {inv.period_end}
+                      </span>
+                    </Link>
+                    <Badge variant={INVOICE_STATUSES[inv.status].badge} dot>
+                      {INVOICE_STATUSES[inv.status].label}
+                    </Badge>
+                  </div>
+                  <ul className="mt-2 space-y-1 text-sm">
+                    {inv.items.map((it) => (
+                      <li key={it.id} className="flex justify-between gap-4">
+                        <span className="text-ink-secondary">{it.description}</span>
+                        <span className="shrink-0 tabular-nums">{formatJPY(it.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              <p className="flex justify-between px-4 text-sm font-semibold">
+                <span>前期の合計(税抜)</span>
+                <span className="tabular-nums">{formatJPY(prevTotal)}</span>
+              </p>
+            </>
+          )}
+        </CardBody>
+      </Card>
 
       {!canRenew ? (
         <Card>
