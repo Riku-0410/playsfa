@@ -117,7 +117,7 @@ export default async function DashboardPage({
         .order("due_date"),
       db
         .from("deals")
-        .select("id, trial_end, service, customers(name)")
+        .select("id, trial_end, service, customers(name, owner_name)")
         .eq("stage", "trial")
         .not("trial_end", "is", null)
         .lte("trial_end", soon)
@@ -388,6 +388,7 @@ export default async function DashboardPage({
               <thead>
                 <tr>
                   <TH>顧客</TH>
+                  <TH>担当</TH>
                   <TH>サービス</TH>
                   <TH>終了日</TH>
                 </tr>
@@ -399,6 +400,9 @@ export default async function DashboardPage({
                       <Link href={`/deals/${r.id}`} className="hover:underline">
                         {r.customers?.name}
                       </Link>
+                    </TD>
+                    <TD className="text-ink-secondary">
+                      {r.customers?.owner_name ?? "—"}
                     </TD>
                     <TD>
                       <Badge variant={SERVICES[r.service].badge} dot>
