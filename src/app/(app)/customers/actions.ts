@@ -27,7 +27,7 @@ export async function createCustomer(formData: FormData) {
   const db = createAdminClient();
   const { data, error } = await db
     .from("customers")
-    .insert(customerValues(formData))
+    .insert({ ...customerValues(formData), owner_name: requiredStr(formData, "owner_name") })
     .select("id")
     .single();
   if (error) throw error;

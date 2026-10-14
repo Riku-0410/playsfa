@@ -112,7 +112,7 @@ export default async function DashboardPage({
         .neq("status", "void"),
       db
         .from("invoices")
-        .select("id, total, due_date, invoice_number, status, customers(name)")
+        .select("id, total, due_date, invoice_number, status, customers(name, owner_name)")
         .in("status", ["unsent", "sent", "overdue"])
         .lt("due_date", today)
         .order("due_date"),
@@ -143,13 +143,13 @@ export default async function DashboardPage({
       // 契約終了日はDB列にないので課金中を全件引いてJSで絞る(件数は少ない)
       db
         .from("contracts")
-        .select("id, service, billing_start_date, term_months, customers(name)")
+        .select("id, service, billing_start_date, term_months, customers(name, owner_name)")
         .eq("status", "active"),
       findPipelineGaps(db),
       // 送付待ち: 未送付で期限が今日〜来月末(期限を過ぎたものは期限超過の欄に出す)
       db
         .from("invoices")
-        .select("id, total, issue_date, due_date, invoice_number, customers(name)")
+        .select("id, total, issue_date, due_date, invoice_number, customers(name, owner_name)")
         .eq("status", "unsent")
         .gte("due_date", today)
         .lte("due_date", nextMonthEnd)
@@ -428,6 +428,7 @@ export default async function DashboardPage({
               <thead>
                 <tr>
                   <TH>顧客</TH>
+                  <TH>担当</TH>
                   <TH>発行日</TH>
                   <TH>支払期限</TH>
                   <TH numeric>金額</TH>
@@ -438,6 +439,9 @@ export default async function DashboardPage({
                 {unsentRows.map((r) => (
                   <TR key={r.id}>
                     <TD className="font-semibold">{r.customers?.name}</TD>
+                    <TD className="text-ink-secondary">
+                      {r.customers?.owner_name ?? "—"}
+                    </TD>
                     <TD className="text-ink-secondary">{r.issue_date}</TD>
                     <TD
                       className={
@@ -496,6 +500,7 @@ export default async function DashboardPage({
                   <thead>
                     <tr>
                       <TH>顧客</TH>
+                      <TH>担当</TH>
                       <TH>サービス</TH>
                       <TH>成約日</TH>
                       <TH numeric>見込額</TH>
@@ -510,6 +515,7 @@ export default async function DashboardPage({
                             {d.customerName}
                           </Link>
                         </TD>
+                        <TD className="text-ink-secondary">{d.ownerName ?? "—"}</TD>
                         <TD>
                           <Badge variant={SERVICES[d.service].badge} dot>
                             {SERVICES[d.service].label}
@@ -542,6 +548,7 @@ export default async function DashboardPage({
                   <thead>
                     <tr>
                       <TH>顧客</TH>
+                      <TH>担当</TH>
                       <TH>サービス</TH>
                       <TH>請求期間の開始</TH>
                       <TH>アクション</TH>
@@ -556,6 +563,7 @@ export default async function DashboardPage({
                               {g.customerName}
                             </Link>
                           </TD>
+                          <TD className="text-ink-secondary">{g.ownerName ?? "—"}</TD>
                           <TD>
                             <Badge variant={SERVICES[g.service].badge} dot>
                               {SERVICES[g.service].label}
@@ -624,6 +632,7 @@ export default async function DashboardPage({
               <thead>
                 <tr>
                   <TH>顧客</TH>
+                  <TH>担当</TH>
                   <TH>サービス</TH>
                   <TH>契約終了</TH>
                   <TH>アクション</TH>
@@ -633,6 +642,9 @@ export default async function DashboardPage({
                 {endingRows.map((c) => (
                   <TR key={c.id}>
                     <TD className="font-semibold">{c.customers?.name}</TD>
+                    <TD className="text-ink-secondary">
+                      {c.customers?.owner_name ?? "—"}
+                    </TD>
                     <TD>
                       <Badge variant={SERVICES[c.service].badge} dot>
                         {SERVICES[c.service].label}
@@ -685,6 +697,7 @@ export default async function DashboardPage({
                 <tr>
                   <TH>請求番号</TH>
                   <TH>顧客</TH>
+                  <TH>担当</TH>
                   <TH>支払期限</TH>
                   <TH numeric>金額</TH>
                   <TH>ステータス</TH>
@@ -696,6 +709,9 @@ export default async function DashboardPage({
                   <TR key={r.id}>
                     <TD className="font-semibold">{r.invoice_number ?? "—"}</TD>
                     <TD>{r.customers?.name}</TD>
+                    <TD className="text-ink-secondary">
+                      {r.customers?.owner_name ?? "—"}
+                    </TD>
                     <TD className="font-semibold text-critical-deep">
                       {r.due_date}
                     </TD>

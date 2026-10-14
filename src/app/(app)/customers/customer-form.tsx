@@ -100,10 +100,13 @@ export async function CustomerForm({
       </div>
       <div className="grid grid-cols-2 gap-4">
         <Field>
-          <Label htmlFor="owner_name">弊社担当者</Label>
+          <Label htmlFor="owner_name">
+            弊社担当者{customer?.id ? "" : " *"}
+          </Label>
           <OwnerNameField
             options={ownerOptions}
             defaultValue={customer?.owner_name ?? ""}
+            required={!customer?.id}
           />
         </Field>
         <Field>

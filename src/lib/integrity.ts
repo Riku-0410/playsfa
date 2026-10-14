@@ -22,12 +22,14 @@ export type DealWithoutContract = {
   expected_billing_start: string | null;
   customer_id: string;
   customerName: string | null;
+  ownerName: string | null;
 };
 
 export type ContractGap = {
   contractId: string;
   customerId: string;
   customerName: string | null;
+  ownerName: string | null;
   service: Service;
   status: Database["public"]["Enums"]["contract_status"];
   billingStartDate: string;
@@ -64,13 +66,13 @@ export async function findPipelineGaps(db: Db): Promise<{
     db
       .from("deals")
       .select(
-        "id, service, closed_at, amount_expected, expected_billing_start, customer_id, customers(name)",
+        "id, service, closed_at, amount_expected, expected_billing_start, customer_id, customers(name, owner_name)",
       )
       .eq("stage", "won"),
     db
       .from("contracts")
       .select(
-        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, previous_contract_id, customers(name)",
+        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, previous_contract_id, customers(name, owner_name)",
       ),
     db
       .from("invoice_items")
@@ -104,6 +106,7 @@ export async function findPipelineGaps(db: Db): Promise<{
       expected_billing_start: d.expected_billing_start,
       customer_id: d.customer_id,
       customerName: d.customers?.name ?? null,
+      ownerName: d.customers?.owner_name ?? null,
     }))
     .sort((a, b) => (a.closed_at ?? "").localeCompare(b.closed_at ?? ""));
 
@@ -141,6 +144,7 @@ export async function findPipelineGaps(db: Db): Promise<{
       contractId: c.id,
       customerId: c.customer_id,
       customerName: c.customers?.name ?? null,
+      ownerName: c.customers?.owner_name ?? null,
       service: c.service,
       status: c.status,
       billingStartDate: c.billing_start_date,

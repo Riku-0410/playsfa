@@ -11,9 +11,11 @@ import { Input } from "@/components/ui/input";
 export function OwnerNameField({
   options,
   defaultValue,
+  required = false,
 }: {
   options: string[];
   defaultValue: string;
+  required?: boolean;
 }) {
   const [value, setValue] = useState(defaultValue);
   return (
@@ -22,6 +24,7 @@ export function OwnerNameField({
         id="owner_name"
         name="owner_name"
         placeholder="白石"
+        required={required}
         value={value}
         onChange={(e) => setValue(e.target.value)}
       />
