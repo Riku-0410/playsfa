@@ -167,23 +167,25 @@ export async function deleteContract(formData: FormData) {
   redirect("/contracts");
 }
 
-/** 契約の更新。期間を延ばして次期分の請求書を生成する(契約レコードは増やさない) */
+/** 契約の更新。新しい契約を登録して次期分の請求書を作り、前の契約は満了へ */
 export async function renewContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const amount = num(formData, "amount_per_billing");
   if (!amount || amount <= 0) throw new Error("請求額が不正です");
-  await renewContractRecord(db, {
+  const { contractId } = await renewContractRecord(db, {
     id,
     billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
     amount_per_billing: amount,
     agreement_date: requiredStr(formData, "agreement_date"),
+    billing_start_date: requiredStr(formData, "billing_start_date"),
+    fees: parseFees(formData),
   });
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/reports");
   revalidatePath("/");
-  redirect(`/invoices?contract=${id}`);
+  redirect(`/invoices?contract=${contractId}`);
 }
 
 /** 更新されなかった契約を満了にする。未送付の請求書は残っていない前提(残っていれば無効化) */

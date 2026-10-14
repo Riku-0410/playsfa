@@ -8,11 +8,13 @@ import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate, nextTermStart } from "@/lib/billing";
+import { successorOf } from "@/lib/contracts";
 import { todayJST } from "@/lib/dates";
 import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renewContract } from "../../actions";
+import { FeeRows } from "../../fee-rows";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +57,11 @@ export default async function RenewContractPage({
 
   const endDate = contractEndDate(contract.billing_start_date, contract.term_months);
   const nextStart = nextTermStart(contract.billing_start_date, contract.term_months);
-  const nextEnd = contractEndDate(nextStart, 12);
   const recurringFees = (contract.contract_fees ?? []).filter((f) => f.recurring);
-  const canRenew = contract.status === "active" || contract.status === "ended";
+  const successor = await successorOf(db, contract.id);
+  const canRenew =
+    !successor && (contract.status === "active" || contract.status === "ended");
+  const today = todayJST();
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -71,16 +75,13 @@ export default async function RenewContractPage({
       />
 
       <CardInset className="space-y-1 p-4 text-sm">
-        <p>
-          現在の契約期間 {contract.billing_start_date} 〜 {endDate}
-        </p>
         <p className="font-semibold">
-          次期 {nextStart} 〜 {nextEnd}(12ヶ月)
+          今の契約 {contract.billing_start_date} 〜 {endDate}
         </p>
         <p className="text-xs text-ink-muted">
-          契約はそのまま期間が12ヶ月延び、次期分の請求書が「未送付」として生成されます。
-          過去の請求書は変わりません。条件が変わった場合はここで直してください。
-          新しい契約として登録し直す場合は、旧契約をダッシュボードか編集画面から「満了」にしてください。
+          更新すると新しい契約(12ヶ月)として登録し、その期間分の請求書を「未送付」で作ります。
+          今の契約は{endDate < today ? "すぐに" : `終了日(${endDate})を過ぎた翌朝に`}「満了」になります。
+          今の契約の請求書は変わりません。
         </p>
       </CardInset>
 
@@ -133,7 +134,18 @@ export default async function RenewContractPage({
         </CardBody>
       </Card>
 
-      {!canRenew ? (
+      {successor ? (
+        <Card>
+          <CardBody className="flex items-center justify-between gap-4 text-sm text-ink-secondary">
+            <span>
+              この契約は更新済みです(新しい契約は {successor.billing_start_date} から)
+            </span>
+            <Link href={`/contracts/${successor.id}/edit`}>
+              <Button size="sm" variant="outline">新しい契約を見る →</Button>
+            </Link>
+          </CardBody>
+        </Card>
+      ) : !canRenew ? (
         <Card>
           <CardBody className="text-sm text-ink-secondary">
             {contract.status === "churned"
@@ -144,7 +156,7 @@ export default async function RenewContractPage({
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>次期の契約条件</CardTitle>
+            <CardTitle>新しい契約の条件</CardTitle>
           </CardHeader>
           <CardBody>
             <SaveForm
@@ -184,39 +196,35 @@ export default async function RenewContractPage({
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <Field>
-                  <Label htmlFor="cr-agreement">更新合意日 *</Label>
+                  <Label htmlFor="cr-agreement">契約合意日 *</Label>
                   <Input
                     id="cr-agreement"
                     name="agreement_date"
                     type="date"
                     required
-                    defaultValue={todayJST()}
+                    defaultValue={today}
                   />
                 </Field>
+                <Field>
+                  <Label htmlFor="cr-start">課金開始日 *</Label>
+                  <Input
+                    id="cr-start"
+                    name="billing_start_date"
+                    type="date"
+                    required
+                    min={nextStart}
+                    defaultValue={nextStart}
+                  />
+                  <FieldHint>
+                    新しい契約がいつからか。今の契約の終了日({endDate})より後の日付
+                  </FieldHint>
+                </Field>
               </div>
-              <div className="border-t border-line pt-4 text-sm">
-                <p className="text-xs font-bold text-ink-secondary">
-                  次期の初回請求に載る費用
-                </p>
-                {recurringFees.length === 0 ? (
-                  <p className="mt-2 text-xs text-ink-muted">
-                    毎年かかる費用はありません(初期費用は載りません)
-                  </p>
-                ) : (
-                  <ul className="mt-2 space-y-1">
-                    {recurringFees.map((f) => (
-                      <li key={f.description} className="flex justify-between">
-                        <span>{f.description}</span>
-                        <span className="font-semibold tabular-nums">
-                          {formatJPY(f.amount)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div className="border-t border-line pt-4">
+                <FeeRows initial={recurringFees} />
               </div>
               <div className="flex justify-end pt-2">
-                <Button type="submit">更新して次期の請求を生成 →</Button>
+                <Button type="submit">新しい契約を登録して請求を生成 →</Button>
               </div>
             </SaveForm>
           </CardBody>

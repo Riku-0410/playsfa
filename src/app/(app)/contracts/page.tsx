@@ -66,10 +66,17 @@ export default async function ContractsPage({
     )
     .in("status", ["active", "pending"]);
 
-  const [{ data: contracts, count }, { data: arrRows }] = await Promise.all([
-    query,
-    arrQuery,
-  ]);
+  const [{ data: contracts, count }, { data: arrRows }, { data: renewedRows }] =
+    await Promise.all([
+      query,
+      arrQuery,
+      db
+        .from("contracts")
+        .select("previous_contract_id")
+        .not("previous_contract_id", "is", null),
+    ]);
+  // 更新済み(新しい契約がある)の契約
+  const renewed = new Set((renewedRows ?? []).map((r) => r.previous_contract_id));
   const total = count ?? 0;
 
   const arr = calcArr((arrRows ?? []).filter((c) => c.status === "active"));
@@ -168,7 +175,8 @@ export default async function ContractsPage({
                 {contracts.map((c) => {
                   const endDate = contractEndDate(c.billing_start_date, c.term_months);
                   // 終了日を過ぎても課金中 = 更新か満了かが未処理
-                  const expired = c.status === "active" && endDate < today;
+                  const expired =
+                    c.status === "active" && endDate < today && !renewed.has(c.id);
                   return (
                   <TR key={c.id}>
                     <TD className="font-semibold">
@@ -212,7 +220,7 @@ export default async function ContractsPage({
                     </TD>
                     <TD>
                       <div className="flex gap-1.5">
-                        {["active", "ended"].includes(c.status) && (
+                        {["active", "ended"].includes(c.status) && !renewed.has(c.id) && (
                           <Link href={`/contracts/${c.id}/renew`}>
                             <Button size="sm" variant="outline">更新</Button>
                           </Link>

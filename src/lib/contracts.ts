@@ -5,7 +5,6 @@ import {
   computeInvoiceSchedule,
   contractEndDate,
   dueDateForYmd,
-  nextTermStart,
   type BillingCycle,
 } from "@/lib/billing";
 import { todayJST } from "@/lib/dates";
@@ -28,6 +27,8 @@ export type NewContract = {
   billing_start_date: string;
   term_months?: number;
   fees?: ContractFee[];
+  /** 更新で作る契約なら前の契約 */
+  previous_contract_id?: string | null;
 };
 
 /** 同じ顧客・サービスで期間の重なる課金待ち/課金中の契約がすでにある */
@@ -42,7 +43,7 @@ export class DuplicateContractError extends Error {
  * 初期費用・年間費用は初回請求に明細行として載る。
  * 途中で失敗したら契約ごと巻き戻す。
  * - 同じ顧客・サービスで期間の重なる契約があれば DuplicateContractError(継続なら「更新」を使う)
- * - 商談の指定がなければ、同じ顧客・サービスの未契約の商談(失注以外)を自動で紐づける
+ * - 商談の指定がなければ、同じ顧客・サービスの未契約の商談(失注以外)を自動で紐づける(更新では紐づけない)
  */
 export async function createContractWithInvoices(
   db: SupabaseClient<Database>,
@@ -68,7 +69,7 @@ export async function createContractWithInvoices(
   if (overlapping) throw new DuplicateContractError(overlapping.id);
 
   let dealId = input.deal_id ?? null;
-  if (!dealId) {
+  if (!dealId && !input.previous_contract_id) {
     const { data: linked } = await db
       .from("contracts")
       .select("deal_id")
@@ -97,6 +98,7 @@ export async function createContractWithInvoices(
       billing_start_date: input.billing_start_date,
       term_months: termMonths,
       status: "pending",
+      previous_contract_id: input.previous_contract_id ?? null,
     })
     .select("id")
     .single();
@@ -179,24 +181,37 @@ export type RenewContractInput = {
   billing_cycle: BillingCycle;
   amount_per_billing: number;
   agreement_date: string;
-  term_months?: number;
+  billing_start_date: string;
+  fees: ContractFee[];
 };
 
+/** この契約を更新して作った契約(なければ null) */
+export async function successorOf(
+  db: SupabaseClient<Database>,
+  contractId: string,
+): Promise<{ id: string; billing_start_date: string } | null> {
+  const { data } = await db
+    .from("contracts")
+    .select("id, billing_start_date")
+    .eq("previous_contract_id", contractId)
+    .limit(1);
+  return data?.[0] ?? null;
+}
+
 /**
- * 契約の更新。契約レコードは増やさず、期間を延ばして次期分の請求書を生成する。
- * - 次期の課金開始 = 現在の終了日の翌日
- * - 毎年かかる費用(recurring)は次期の初回請求に載る。初期費用は載らない
- * - 金額・サイクルが変わったら契約の値を書き換え、変更内容を活動ログに残す
- *   (過去の請求書は明細に金額を持つので変わらない)
- * - 満了にしていた契約を更新した場合は課金中に戻す
+ * 契約の更新 = 新しい契約を登録し、前の契約は満了にする。
+ * - 新しい契約は前の契約の終了日より後から始める(重なると二重請求になる)
+ * - 前の契約の終了日がもう過ぎていればすぐ満了に。まだなら課金中のまま残し、
+ *   終了日を過ぎた朝に日次バッチが満了にする(未送付の請求書には手を付けない)
+ * - 条件の変化は活動ログに残す
  */
 export async function renewContract(
   db: SupabaseClient<Database>,
   input: RenewContractInput,
-): Promise<{ nextStart: string; invoiceCount: number }> {
+): Promise<{ contractId: string }> {
   const { data: c, error } = await db
     .from("contracts")
-    .select("*, contract_fees(description, amount, recurring)")
+    .select("*")
     .eq("id", input.id)
     .single();
   if (error) throw error;
@@ -204,56 +219,30 @@ export async function renewContract(
   if (c.status === "pending") {
     throw new Error("課金開始前の契約は更新できません");
   }
-
-  const addMonths = input.term_months ?? 12;
-  const nextStart = nextTermStart(c.billing_start_date, c.term_months);
-
-  // 二重更新ガード: 次期開始日の利用料行がすでにあるなら更新済み
-  const { count } = await db
-    .from("invoice_items")
-    .select("id", { count: "exact", head: true })
-    .eq("contract_id", c.id)
-    .eq("period_start", nextStart);
-  if ((count ?? 0) > 0) throw new Error("この契約はすでに更新されています");
-
-  const recurringFees = (c.contract_fees ?? []).filter((f) => f.recurring);
-  const drafts = computeInvoiceSchedule({
-    serviceLabel: SERVICES[c.service].label,
-    billingCycle: input.billing_cycle,
-    amountPerBilling: input.amount_per_billing,
-    taxRate: Number(c.tax_rate),
-    billingStartDate: nextStart,
-    termMonths: addMonths,
-    fees: recurringFees,
-  });
-
-  const { data: inserted, error: invoiceError } = await db
-    .from("invoices")
-    .insert(
-      drafts.map(({ items: _items, ...d }) => ({
-        ...d,
-        customer_id: c.customer_id,
-        tax_rate: c.tax_rate,
-        status: "unsent" as const,
-      })),
-    )
-    .select("id, issue_date");
-  if (invoiceError || !inserted) {
-    throw invoiceError ?? new Error("請求書の生成に失敗しました");
+  if (await successorOf(db, c.id)) {
+    throw new Error("この契約はすでに更新されています");
   }
-  const byIssueDate = new Map(inserted.map((r) => [r.issue_date, r.id]));
-  const itemRows = drafts.flatMap((d) => {
-    const invoiceId = byIssueDate.get(d.issue_date);
-    if (!invoiceId) return [];
-    return d.items.map((it) => ({ ...it, invoice_id: invoiceId, contract_id: c.id }));
-  });
-  const { error: itemError } = await db.from("invoice_items").insert(itemRows);
-  if (itemError) {
-    await db.from("invoices").delete().in("id", inserted.map((r) => r.id));
-    throw itemError;
+  const oldEnd = contractEndDate(c.billing_start_date, c.term_months);
+  if (input.billing_start_date <= oldEnd) {
+    throw new Error(`課金開始日は今の契約の終了日(${oldEnd})より後にしてください`);
   }
 
-  // 変更点は活動ログに残す(履歴テーブルは持たない)
+  const { contractId } = await createContractWithInvoices(db, {
+    customer_id: c.customer_id,
+    previous_contract_id: c.id,
+    service: c.service,
+    billing_cycle: input.billing_cycle,
+    amount_per_billing: input.amount_per_billing,
+    tax_rate: Number(c.tax_rate),
+    agreement_date: input.agreement_date,
+    billing_start_date: input.billing_start_date,
+    fees: input.fees,
+  });
+
+  if (c.status === "active" && oldEnd < todayJST()) {
+    await db.from("contracts").update({ status: "ended" }).eq("id", c.id);
+  }
+
   const changes: string[] = [];
   if (input.amount_per_billing !== c.amount_per_billing) {
     changes.push(`請求額/回 ${c.amount_per_billing.toLocaleString()}→${input.amount_per_billing.toLocaleString()}`);
@@ -261,31 +250,15 @@ export async function renewContract(
   if (input.billing_cycle !== c.billing_cycle) {
     changes.push(`サイクル ${BILLING_CYCLES[c.billing_cycle]}→${BILLING_CYCLES[input.billing_cycle]}`);
   }
-
-  const { error: upError } = await db
-    .from("contracts")
-    .update({
-      billing_cycle: input.billing_cycle,
-      amount_per_billing: input.amount_per_billing,
-      agreement_date: input.agreement_date,
-      term_months: c.term_months + addMonths,
-      status: "active",
-    })
-    .eq("id", c.id);
-  if (upError) {
-    await db.from("invoices").delete().in("id", inserted.map((r) => r.id));
-    throw upError;
-  }
-
   await db.from("activities").insert({
     customer_id: c.customer_id,
     deal_id: c.deal_id,
     type: "memo",
-    content: `${SERVICES[c.service].label}の契約を更新(${nextStart}〜)${changes.length ? ": " + changes.join(", ") : ""}`,
+    content: `${SERVICES[c.service].label}の契約を更新(${input.billing_start_date}〜)${changes.length ? ": " + changes.join(", ") : ""}`,
     occurred_at: input.agreement_date,
   });
 
-  return { nextStart, invoiceCount: drafts.length };
+  return { contractId };
 }
 
 /**

@@ -172,6 +172,7 @@ export type Database = {
           customer_id: string
           deal_id: string | null
           id: string
+          previous_contract_id: string | null
           service: Database["public"]["Enums"]["service_tag"]
           status: Database["public"]["Enums"]["contract_status"]
           tax_rate: number
@@ -188,6 +189,7 @@ export type Database = {
           customer_id: string
           deal_id?: string | null
           id?: string
+          previous_contract_id?: string | null
           service: Database["public"]["Enums"]["service_tag"]
           status?: Database["public"]["Enums"]["contract_status"]
           tax_rate?: number
@@ -204,6 +206,7 @@ export type Database = {
           customer_id?: string
           deal_id?: string | null
           id?: string
+          previous_contract_id?: string | null
           service?: Database["public"]["Enums"]["service_tag"]
           status?: Database["public"]["Enums"]["contract_status"]
           tax_rate?: number
@@ -223,6 +226,13 @@ export type Database = {
             columns: ["deal_id"]
             isOneToOne: false
             referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_previous_contract_id_fkey"
+            columns: ["previous_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
         ]

@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Field, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 
+type Fee = { description: string; amount: number; recurring: boolean };
+
 /** 初期費用・年間費用の可変行。名前を重複させて FormData.getAll で受ける */
-export function FeeRows() {
-  const [keys, setKeys] = useState<number[]>([]);
-  const [nextKey, setNextKey] = useState(0);
+export function FeeRows({ initial = [] }: { initial?: Fee[] }) {
+  const [keys, setKeys] = useState<number[]>(initial.map((_, i) => i));
+  const [nextKey, setNextKey] = useState(initial.length);
 
   return (
     <div className="space-y-3">
@@ -20,6 +22,7 @@ export function FeeRows() {
               id={`fee-desc-${key}`}
               name="fee_description"
               required
+              defaultValue={initial[key]?.description}
               placeholder="初期費用"
             />
           </Field>
@@ -30,12 +33,17 @@ export function FeeRows() {
               name="fee_amount"
               inputMode="numeric"
               required
+              defaultValue={initial[key]?.amount}
               placeholder="100,000"
             />
           </Field>
           <Field className="w-40 shrink-0">
             <Label htmlFor={`fee-type-${key}`}>かかり方</Label>
-            <Select id={`fee-type-${key}`} name="fee_type" defaultValue="once">
+            <Select
+              id={`fee-type-${key}`}
+              name="fee_type"
+              defaultValue={initial[key]?.recurring ? "recurring" : "once"}
+            >
               <option value="once">初年度のみ</option>
               <option value="recurring">毎年(更新後も)</option>
             </Select>

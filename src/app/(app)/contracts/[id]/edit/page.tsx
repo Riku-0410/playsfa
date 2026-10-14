@@ -9,7 +9,7 @@ import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate } from "@/lib/billing";
-import { billingStartBlocker } from "@/lib/contracts";
+import { billingStartBlocker, successorOf } from "@/lib/contracts";
 import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -30,7 +30,10 @@ export default async function EditContractPage({
     .eq("id", id)
     .single();
   if (!contract) notFound();
-  const startBlocker = await billingStartBlocker(db, contract);
+  const [startBlocker, successor] = await Promise.all([
+    billingStartBlocker(db, contract),
+    successorOf(db, contract.id),
+  ]);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -41,10 +44,16 @@ export default async function EditContractPage({
             <Badge variant={SERVICES[contract.service].badge} dot>
               {SERVICES[contract.service].label}
             </Badge>
-            {["active", "ended"].includes(contract.status) && (
-              <Link href={`/contracts/${contract.id}/renew`}>
-                <Button variant="outline">契約を更新 →</Button>
+            {successor ? (
+              <Link href={`/contracts/${successor.id}/edit`}>
+                <Button variant="outline">更新後の契約 →</Button>
               </Link>
+            ) : (
+              ["active", "ended"].includes(contract.status) && (
+                <Link href={`/contracts/${contract.id}/renew`}>
+                  <Button variant="outline">契約を更新 →</Button>
+                </Link>
+              )
             )}
           </>
         }
@@ -59,6 +68,14 @@ export default async function EditContractPage({
           契約期間 {contract.billing_start_date} 〜{" "}
           {contractEndDate(contract.billing_start_date, contract.term_months)}
         </span>
+        {contract.previous_contract_id && (
+          <Link
+            href={`/contracts/${contract.previous_contract_id}/edit`}
+            className="text-xs font-semibold underline"
+          >
+            更新前の契約
+          </Link>
+        )}
         <span className="text-xs text-ink-muted">
           金額・サイクルは請求書が生成済みのため変更不可。課金開始日は請求書がすべて未送付のうちは変えられます。
           更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で、作り直しは削除→再登録で。

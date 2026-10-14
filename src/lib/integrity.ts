@@ -70,7 +70,7 @@ export async function findPipelineGaps(db: Db): Promise<{
     db
       .from("contracts")
       .select(
-        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, customers(name)",
+        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, previous_contract_id, customers(name)",
       ),
     db
       .from("invoice_items")
@@ -119,8 +119,11 @@ export async function findPipelineGaps(db: Db): Promise<{
   const live = contracts.filter(
     (c) => c.status === "pending" || c.status === "active",
   );
+  // 更新済みの前の契約は、終了日まで新しい契約と並んで生きているが二重登録ではない
+  const renewed = new Set(contracts.map((c) => c.previous_contract_id).filter(Boolean));
   const liveCount = new Map<string, number>();
   for (const c of live) {
+    if (renewed.has(c.id)) continue;
     const key = customerService(c.customer_id, c.service);
     liveCount.set(key, (liveCount.get(key) ?? 0) + 1);
   }

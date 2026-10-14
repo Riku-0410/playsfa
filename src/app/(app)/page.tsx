@@ -102,7 +102,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes] =
     await Promise.all([
       db
         .from("invoices")
@@ -154,6 +154,11 @@ export default async function DashboardPage({
         .gte("due_date", today)
         .lte("due_date", nextMonthEnd)
         .order("due_date"),
+      // 更新済み(新しい契約がある)の契約は、終了日まで課金中でも「更新か満了か」の対象外
+      db
+        .from("contracts")
+        .select("previous_contract_id")
+        .not("previous_contract_id", "is", null),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -161,7 +166,9 @@ export default async function DashboardPage({
     contractGaps.reduce((a, g) => a + g.missingPeriods.length, 0);
 
   // 契約期間の終了が今月〜翌月、または過ぎているのに課金中 = 更新か満了かを決める対象
+  const renewed = new Set((renewedRes.data ?? []).map((r) => r.previous_contract_id));
   const endingRows = (activeRows.data ?? [])
+    .filter((c) => !renewed.has(c.id))
     .map((c) => ({
       ...c,
       endDate: contractEndDate(c.billing_start_date, c.term_months),
