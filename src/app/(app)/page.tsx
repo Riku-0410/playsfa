@@ -11,7 +11,7 @@ import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, addMonths, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
-import { monthClock, pace, PACE_VERDICTS, type MonthClock } from "@/lib/pace";
+import { monthClock, pace, PACE_VERDICTS, weekStartDate, type MonthClock } from "@/lib/pace";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -85,11 +85,6 @@ function TargetRow({
   );
 }
 
-/** 残り日数を「残り15日(約2週間)」「残り5日」のように */
-function remainingText(days: number): string {
-  return days >= 7 ? `残り${days}日(約${Math.round(days / 7)}週間)` : `残り${days}日`;
-}
-
 /** 週あたり件数を「2〜3件」「2件」「1件未満」のように(小数を見せない) */
 function weeklyText(n: number): string {
   if (n < 1) return "1件未満";
@@ -99,70 +94,48 @@ function weeklyText(n: number): string {
 }
 
 /**
- * 月間目標に対するペース。判定バッジ・今日の目安との差・今週の件数・残りに必要な週ペース。
+ * 月間目標に対するペース。今週の目標(何曜に見ても同じ)と今週の実績、先週までのペース。
  * 目標が未設定なら何も出さない
  */
 function PaceSummary({
   clock,
   target,
   actual,
-  planned,
   week,
-  compact = false,
+  showBadge = true,
 }: {
   clock: MonthClock;
   target: number;
   actual: number;
-  planned: number;
   /** 今週トライアルが始まった件数 */
   week: number;
-  compact?: boolean;
+  showBadge?: boolean;
 }) {
   if (target <= 0) return null;
-  const p = pace(clock, target, actual, planned);
+  const p = pace(clock, target, actual, week);
   const verdict = p.verdict ? PACE_VERDICTS[p.verdict] : null;
-  const lead = p.lead;
-  const isCurrent = clock.weekStart !== null;
   return (
-    <div className={compact ? "space-y-0.5" : "space-y-1"}>
-      {verdict && !compact && (
+    <div className="space-y-1">
+      {verdict && showBadge && (
         <Badge variant={verdict.badge} dot>{verdict.label}</Badge>
       )}
-      {isCurrent && p.verdict === "achieved" && (
+      {clock.week && p.verdict === "achieved" && (
         <p className="text-xs font-semibold text-good-deep">目標を達成しました</p>
       )}
-      {isCurrent && p.verdict !== "achieved" && (
-        <div className="space-y-1.5 text-xs text-ink-secondary">
-          <div>
-            <p
-              className={
-                lead > 0
-                  ? "font-semibold text-good-deep"
-                  : lead < 0
-                    ? "font-semibold text-critical-deep"
-                    : "font-semibold text-ink"
-              }
-            >
-              {lead > 0
-                ? `予定より${lead}件先行しています`
-                : lead < 0
-                  ? `予定より${-lead}件遅れています`
-                  : "予定どおりです"}
-            </p>
-            <p className="text-ink-muted">
-              (月の目標から計算すると、今日までに{p.expected}件ほしいところ)
-            </p>
-          </div>
-          {p.remaining > 0 && (
-            <p>
-              月末まであと{p.remaining}件 → {remainingText(p.remainingDays)}、
-              <span className="font-semibold text-ink">
-                週に{weeklyText(p.requiredWeekly)}
-              </span>
-              のペース{p.requiredWeekly <= p.weeklyGuide ? "でOK" : "が必要"}
-            </p>
+      {clock.week && p.verdict !== "achieved" && (
+        <div className="space-y-0.5 text-xs text-ink-secondary">
+          <p>
+            今週の目標 <span className="font-semibold text-ink">{p.weekGoal}件</span> → いま
+            {week}件
+            {p.weekLeft > 0 ? (
+              <span className="font-semibold text-critical-deep">(あと{p.weekLeft}件)</span>
+            ) : (
+              <span className="font-semibold text-good-deep">(クリア)</span>
+            )}
+          </p>
+          {p.pastWeekly !== null && (
+            <p>これまでのペース 週に{weeklyText(p.pastWeekly)}</p>
           )}
-          <p>{week > 0 ? `今週は${week}件` : "今週はまだ0件"}</p>
         </div>
       )}
     </div>
@@ -300,6 +273,7 @@ export default async function DashboardPage({
   };
   // ペース: 月の経過と、今週(月曜〜)に始まったトライアル件数
   const clock = monthClock(kpiYM, today);
+  const weekStart = weekStartDate(kpiYM, clock);
   const weekOf = new Map<string, number>();
   let unassignedTrials = 0;
   let noAmountTrials = 0;
@@ -310,7 +284,7 @@ export default async function DashboardPage({
     const owner = r.customers?.owner_name;
     if (owner) bump(`${owner}|${r.service}`, amount);
     else unassignedTrials += 1;
-    if (clock.weekStart && r.trial_start && r.trial_start >= clock.weekStart) {
+    if (weekStart && r.trial_start && r.trial_start >= weekStart) {
       for (const k of [`|${r.service}`, ...(owner ? [`${owner}|${r.service}`] : [])]) {
         weekOf.set(k, (weekOf.get(k) ?? 0) + 1);
       }
@@ -427,8 +401,7 @@ export default async function DashboardPage({
                     <PaceSummary
                       clock={clock}
                       target={kpiTarget}
-                      actual={kpiActual}
-                      planned={kpiPlanned}
+                      actual={sumOf(actualOf, "")}
                       week={sumOf(weekOf, "")}
                     />
                   </div>
@@ -474,7 +447,7 @@ export default async function DashboardPage({
                     const repTarget = sumOf(targetOf, rep);
                     const repPace =
                       repTarget > 0
-                        ? pace(clock, repTarget, sumOf(actualOf, rep), sumOf(plannedOf, rep))
+                        ? pace(clock, repTarget, sumOf(actualOf, rep), sumOf(weekOf, rep))
                         : null;
                     const verdict = repPace?.verdict ? PACE_VERDICTS[repPace.verdict] : null;
                     return (
@@ -493,11 +466,10 @@ export default async function DashboardPage({
                         )}
                       </div>
                       <PaceSummary
-                        compact
+                        showBadge={false}
                         clock={clock}
                         target={repTarget}
                         actual={sumOf(actualOf, rep)}
-                        planned={sumOf(plannedOf, rep)}
                         week={sumOf(weekOf, rep)}
                       />
                       <input type="hidden" name={`rep_name_${i}`} value={rep} />
