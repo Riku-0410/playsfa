@@ -87,7 +87,3 @@ export function pace(
     requiredWeekly: remainingDays > 0 ? (remaining * 7) / remainingDays : remaining,
   };
 }
-
-/** 2.3 のような小数1桁。整数ならそのまま */
-export const fmtCount = (n: number) =>
-  Number.isInteger(n) ? String(n) : n.toFixed(1);

@@ -11,7 +11,7 @@ import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, addMonths, monthBoundsJST, todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
-import { fmtCount, monthClock, pace, PACE_VERDICTS, type MonthClock } from "@/lib/pace";
+import { monthClock, pace, PACE_VERDICTS, type MonthClock } from "@/lib/pace";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -85,6 +85,19 @@ function TargetRow({
   );
 }
 
+/** 残り日数を「残り15日(約2週間)」「残り5日」のように */
+function remainingText(days: number): string {
+  return days >= 7 ? `残り${days}日(約${Math.round(days / 7)}週間)` : `残り${days}日`;
+}
+
+/** 週あたり件数を「2〜3件」「2件」「1件未満」のように(小数を見せない) */
+function weeklyText(n: number): string {
+  if (n < 1) return "1件未満";
+  const r = Math.round(n);
+  if (Math.abs(n - r) < 0.15) return `${r}件`;
+  return `${Math.floor(n)}〜${Math.ceil(n)}件`;
+}
+
 /**
  * 月間目標に対するペース。判定バッジ・今日の目安との差・今週の件数・残りに必要な週ペース。
  * 目標が未設定なら何も出さない
@@ -115,36 +128,42 @@ function PaceSummary({
       {verdict && !compact && (
         <Badge variant={verdict.badge} dot>{verdict.label}</Badge>
       )}
-      {isCurrent && (
-        <ul className="space-y-0.5 text-xs text-ink-secondary">
-          <li>
-            今日の目安 {p.expected}件 →{" "}
-            <span
+      {isCurrent && p.verdict === "achieved" && (
+        <p className="text-xs font-semibold text-good-deep">目標を達成しました</p>
+      )}
+      {isCurrent && p.verdict !== "achieved" && (
+        <div className="space-y-1.5 text-xs text-ink-secondary">
+          <div>
+            <p
               className={
                 lead > 0
                   ? "font-semibold text-good-deep"
                   : lead < 0
                     ? "font-semibold text-critical-deep"
-                    : "font-semibold"
+                    : "font-semibold text-ink"
               }
             >
-              {lead > 0 ? `${lead}件先行` : lead < 0 ? `${-lead}件遅れ` : "目安どおり"}
-            </span>
-          </li>
-          <li>
-            今週 <span className="font-semibold text-ink">{week}件</span>
-            (週の目安 {fmtCount(Math.round(p.weeklyGuide * 10) / 10)}件)
-          </li>
+              {lead > 0
+                ? `予定より${lead}件先行しています`
+                : lead < 0
+                  ? `予定より${-lead}件遅れています`
+                  : "予定どおりです"}
+            </p>
+            <p className="text-ink-muted">
+              (月の目標から計算すると、今日までに{p.expected}件ほしいところ)
+            </p>
+          </div>
           {p.remaining > 0 && (
-            <li>
-              あと{p.remaining}件 / 残り{p.remainingDays}日 → 週
+            <p>
+              月末まであと{p.remaining}件 → {remainingText(p.remainingDays)}、
               <span className="font-semibold text-ink">
-                {fmtCount(Math.round(p.requiredWeekly * 10) / 10)}件
+                週に{weeklyText(p.requiredWeekly)}
               </span>
-              {p.requiredWeekly <= p.weeklyGuide ? "ペースでOK" : "ペースが必要"}
-            </li>
+              のペース{p.requiredWeekly <= p.weeklyGuide ? "でOK" : "が必要"}
+            </p>
           )}
-        </ul>
+          <p>{week > 0 ? `今週は${week}件` : "今週はまだ0件"}</p>
+        </div>
       )}
     </div>
   );
@@ -297,9 +316,14 @@ export default async function DashboardPage({
       }
     }
   }
-  /** 担当者(全社は '')のサービス合計 */
-  const sumOf = (m: Map<string, number>, rep: string) =>
-    SERVICE_KEYS.reduce((a, s) => a + (m.get(`${rep}|${s}`) ?? 0), 0);
+  /** 担当者(全社は '')のサービス合計。目標のあるサービスがあればそれだけで数える(目標と実績の範囲を揃える) */
+  const sumOf = (m: Map<string, number>, rep: string) => {
+    const withTarget = SERVICE_KEYS.filter((s) => (targetOf.get(`${rep}|${s}`) ?? 0) > 0);
+    return (withTarget.length ? withTarget : SERVICE_KEYS).reduce(
+      (a, s) => a + (m.get(`${rep}|${s}`) ?? 0),
+      0,
+    );
+  };
   // 見込み: トライアル予定で予定月が対象月の商談。同じキーで数える
   const plannedRows = (plannedRes.data ?? []).filter(
     (r) => r.trial_planned_month === kpiStart,
