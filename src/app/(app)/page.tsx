@@ -101,12 +101,15 @@ function PaceSummary({
   clock,
   target,
   actual,
+  planned,
   week,
   showBadge = true,
 }: {
   clock: MonthClock;
   target: number;
   actual: number;
+  /** トライアル予定(見込み)。「今月あと○件」から差し引く */
+  planned: number;
   /** 今週トライアルが始まった件数 */
   week: number;
   showBadge?: boolean;
@@ -125,7 +128,17 @@ function PaceSummary({
       {clock.week && p.verdict !== "achieved" && (
         <div className="space-y-0.5 text-xs text-ink-secondary">
           <p className="pb-0.5 text-sm text-ink">
-            今月あと<span className="mx-0.5 text-base font-bold">{target - actual}</span>件
+            {target - actual - planned > 0 ? (
+              <>
+                今月あと
+                <span className="mx-0.5 text-base font-bold">{target - actual - planned}</span>件
+              </>
+            ) : (
+              <span className="font-bold">見込みがすべて入れば達成</span>
+            )}
+            {planned > 0 && (
+              <span className="ml-1 text-xs text-ink-muted">(見込み{planned}件を差し引き)</span>
+            )}
           </p>
           <p>
             今週の目標 <span className="font-semibold text-ink">{p.weekGoal}件</span> → いま
@@ -406,6 +419,7 @@ export default async function DashboardPage({
                       clock={clock}
                       target={kpiTarget}
                       actual={kpiActual}
+                      planned={kpiPlanned}
                       week={sumOf(weekOf, "")}
                     />
                   </div>
@@ -474,6 +488,7 @@ export default async function DashboardPage({
                         clock={clock}
                         target={repTarget}
                         actual={sumOf(actualOf, rep)}
+                        planned={sumOf(plannedOf, rep)}
                         week={sumOf(weekOf, rep)}
                       />
                       <input type="hidden" name={`rep_name_${i}`} value={rep} />
