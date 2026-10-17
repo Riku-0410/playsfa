@@ -124,6 +124,9 @@ function PaceSummary({
       )}
       {clock.week && p.verdict !== "achieved" && (
         <div className="space-y-0.5 text-xs text-ink-secondary">
+          <p className="pb-0.5 text-sm text-ink">
+            今月あと<span className="mx-0.5 text-base font-bold">{target - actual}</span>件
+          </p>
           <p>
             今週の目標 <span className="font-semibold text-ink">{p.weekGoal}件</span> → いま
             {week}件
@@ -314,7 +317,8 @@ export default async function DashboardPage({
     if (r.customers?.owner_name) keys.push(`${r.customers.owner_name}|${r.service}`);
     for (const k of keys) plannedOf.set(k, (plannedOf.get(k) ?? 0) + 1);
   }
-  const kpiPlanned = plannedRows.length;
+  // 目標のあるサービスだけで数える(目標と実績の範囲を揃える。未設定なら全サービス)
+  const kpiPlanned = sumOf(plannedOf, "");
   // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 対象月の目標を持つ担当者
   const reps = [
     ...new Set(
@@ -324,7 +328,7 @@ export default async function DashboardPage({
       ].filter((n): n is string => Boolean(n)),
     ),
   ].sort((a, b) => a.localeCompare(b, "ja"));
-  const kpiActual = SERVICE_KEYS.reduce((a, s) => a + (actualOf.get(`|${s}`) ?? 0), 0);
+  const kpiActual = sumOf(actualOf, "");
   const kpiTarget = SERVICE_KEYS.reduce((a, s) => a + (targetOf.get(`|${s}`) ?? 0), 0);
   const kpiPct = kpiTarget > 0 ? Math.round((kpiActual / kpiTarget) * 100) : null;
   const kpiAmount = SERVICE_KEYS.reduce((a, s) => a + (amountOf.get(`|${s}`) ?? 0), 0);
@@ -401,7 +405,7 @@ export default async function DashboardPage({
                     <PaceSummary
                       clock={clock}
                       target={kpiTarget}
-                      actual={sumOf(actualOf, "")}
+                      actual={kpiActual}
                       week={sumOf(weekOf, "")}
                     />
                   </div>
