@@ -4,16 +4,26 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
+import type { Database } from "@/lib/database.types";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addActivity } from "../customers/actions";
 
-type Stage = "lead" | "contacted" | "trial" | "negotiation" | "won" | "lost";
+type Stage = Database["public"]["Enums"]["deal_stage"];
 type Service = "playcut" | "baskestats";
 
+/** トライアル予定月(`YYYY-MM`)を月初日に。トライアル予定で未入力なら今月 */
+function plannedMonth(formData: FormData, stage: Stage): string | null {
+  const ym = str(formData, "trial_planned_month");
+  if (ym && /^\d{4}-\d{2}$/.test(ym)) return `${ym}-01`;
+  return stage === "trial_planned" ? `${todayJST().slice(0, 7)}-01` : null;
+}
+
 function dealValues(formData: FormData) {
+  const stage = requiredStr(formData, "stage") as Stage;
   return {
     customer_id: requiredStr(formData, "customer_id"),
-    stage: requiredStr(formData, "stage") as Stage,
+    stage,
+    trial_planned_month: plannedMonth(formData, stage),
     trial_start: str(formData, "trial_start"),
     trial_end: str(formData, "trial_end"),
     competitor: str(formData, "competitor"),
@@ -94,6 +104,21 @@ export async function updateDeal(formData: FormData) {
   revalidatePath(`/deals/${id}`);
   // 保存後は必ず活動ログ記入モーダルを開く(スキップ可)
   redirect(`/deals/${id}?log=1`);
+}
+
+/** 見込み一覧から: トライアル予定 → トライアル中(開始日はDBトリガーで今日) */
+export async function startTrial(formData: FormData) {
+  const db = createAdminClient();
+  const id = requiredStr(formData, "id");
+  const { error } = await db
+    .from("deals")
+    .update({ stage: "trial" })
+    .eq("id", id)
+    .eq("stage", "trial_planned");
+  if (error) throw error;
+  revalidatePath("/deals");
+  revalidatePath(`/deals/${id}`);
+  revalidatePath("/");
 }
 
 /** 商談の作成/保存後モーダルからの活動ログ記録。記録後はモーダルを閉じて商談詳細へ */

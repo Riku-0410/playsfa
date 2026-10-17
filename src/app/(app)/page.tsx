@@ -16,6 +16,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { createMissingInvoice, endContract } from "./contracts/actions";
+import { startTrial } from "./deals/actions";
 import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
@@ -26,12 +27,15 @@ const SERVICE_KEYS = Object.keys(SERVICES) as (keyof typeof SERVICES)[];
 function TargetRow({
   service,
   actual,
+  planned,
   target,
   amount,
   inputName,
 }: {
   service: keyof typeof SERVICES;
   actual: number;
+  /** トライアル予定で予定月が対象月の商談数(見込み) */
+  planned: number;
   target: number | undefined;
   /** 対象月にトライアル開始した商談の見込額合計(年・税抜) */
   amount: number;
@@ -49,14 +53,17 @@ function TargetRow({
       </span>
       <Meter
         value={actual}
+        secondary={planned}
         max={target ?? 0}
         color={meta.seriesVar}
         className="min-w-10 flex-1"
       />
-      <span className="w-24 shrink-0 text-right text-xs text-ink-secondary tabular-nums">
+      <span className="w-40 shrink-0 text-right text-xs text-ink-secondary tabular-nums">
+        {actual}
+        {planned > 0 && <span className="text-ink-muted"> + 見込{planned}</span>}
         {target
-          ? `${actual} / ${target}件(${Math.round((actual / target) * 100)}%)`
-          : `${actual}件 / 目標未設定`}
+          ? ` / ${target}件(${Math.round((actual / target) * 100)}%)`
+          : "件 / 目標未設定"}
       </span>
       <span className="w-16 shrink-0 text-right text-xs font-semibold tabular-nums">
         {amount > 0 ? formatJPYCompact(amount) : <span className="text-ink-muted">—</span>}
@@ -102,7 +109,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes] =
     await Promise.all([
       db
         .from("invoices")
@@ -159,6 +166,13 @@ export default async function DashboardPage({
         .from("contracts")
         .select("previous_contract_id")
         .not("previous_contract_id", "is", null),
+      // トライアル見込み: トライアル予定で予定月が対象月まで(過ぎたものは今月表示で「予定月を過ぎた」に出す)
+      db
+        .from("deals")
+        .select("id, service, amount_expected, trial_planned_month, customers(name, owner_name)")
+        .eq("stage", "trial_planned")
+        .lte("trial_planned_month", kpiStart)
+        .order("trial_planned_month"),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -209,6 +223,23 @@ export default async function DashboardPage({
     if (owner) bump(`${owner}|${r.service}`, amount);
     else unassignedTrials += 1;
   }
+  // 見込み: トライアル予定で予定月が対象月の商談。同じキーで数える
+  const plannedRows = (plannedRes.data ?? []).filter(
+    (r) => r.trial_planned_month === kpiStart,
+  );
+  // 予定月を過ぎてもトライアル予定のまま(今月表示のときだけ出す)
+  const stalePlannedRows = isCurrentMonth
+    ? (plannedRes.data ?? []).filter(
+        (r) => r.trial_planned_month && r.trial_planned_month < kpiStart,
+      )
+    : [];
+  const plannedOf = new Map<string, number>();
+  for (const r of plannedRows) {
+    const keys = [`|${r.service}`];
+    if (r.customers?.owner_name) keys.push(`${r.customers.owner_name}|${r.service}`);
+    for (const k of keys) plannedOf.set(k, (plannedOf.get(k) ?? 0) + 1);
+  }
+  const kpiPlanned = plannedRows.length;
   // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 対象月の目標を持つ担当者
   const reps = [
     ...new Set(
@@ -277,7 +308,20 @@ export default async function DashboardPage({
                   <p className="mt-2 text-xs text-ink-muted">
                     実績 {kpiActual}件 / 目標 {kpiTarget}件
                   </p>
-                  <Meter value={kpiActual} max={kpiTarget} className="mt-3" />
+                  <Meter
+                    value={kpiActual}
+                    secondary={kpiPlanned}
+                    max={kpiTarget}
+                    className="mt-3"
+                  />
+                  {kpiPlanned > 0 && (
+                    <p className="mt-2 text-xs text-ink-secondary">
+                      見込み{kpiPlanned}件を含めると
+                      <span className="ml-1 font-bold">
+                        {Math.round(((kpiActual + kpiPlanned) / kpiTarget) * 100)}%
+                      </span>
+                    </p>
+                  )}
                   <p className="mt-3 text-xs text-ink-muted">{kpiMonthLabel}の積み上げ見込額</p>
                   <p className="text-xl font-bold tracking-tight">
                     {formatJPY(kpiAmount)}
@@ -303,6 +347,7 @@ export default async function DashboardPage({
                     key={s}
                     service={s}
                     actual={actualOf.get(`|${s}`) ?? 0}
+                    planned={plannedOf.get(`|${s}`) ?? 0}
                     target={targetOf.get(`|${s}`)}
                     amount={amountOf.get(`|${s}`) ?? 0}
                     inputName={`target_${s}`}
@@ -324,6 +369,7 @@ export default async function DashboardPage({
                           key={s}
                           service={s}
                           actual={actualOf.get(`${rep}|${s}`) ?? 0}
+                          planned={plannedOf.get(`${rep}|${s}`) ?? 0}
                           target={targetOf.get(`${rep}|${s}`)}
                           amount={amountOf.get(`${rep}|${s}`) ?? 0}
                           inputName={`rep_${i}_${s}`}
@@ -356,6 +402,87 @@ export default async function DashboardPage({
           </form>
         </CardBody>
       </Card>
+
+      {(plannedRows.length > 0 || stalePlannedRows.length > 0) && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>
+                {kpiMonthLabel}のトライアル見込み {plannedRows.length}件
+              </CardTitle>
+              <p className="mt-1 text-xs text-ink-muted">
+                ステージが「トライアル予定」で、予定月が{kpiMonthLabel}の商談
+              </p>
+            </div>
+            <Link href="/deals?stage=trial_planned">
+              <Button variant="outline" size="sm">商談一覧で見る →</Button>
+            </Link>
+          </CardHeader>
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>顧客</TH>
+                  <TH>担当</TH>
+                  <TH>サービス</TH>
+                  <TH>予定月</TH>
+                  <TH numeric>見込額</TH>
+                  <TH>アクション</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {[...stalePlannedRows, ...plannedRows].map((r) => {
+                  const stale = r.trial_planned_month! < kpiStart;
+                  return (
+                    <TR key={r.id}>
+                      <TD className="font-semibold">
+                        <Link href={`/deals/${r.id}`} className="hover:underline">
+                          {r.customers?.name}
+                        </Link>
+                      </TD>
+                      <TD className="text-ink-secondary">
+                        {r.customers?.owner_name ?? "—"}
+                      </TD>
+                      <TD>
+                        <Badge variant={SERVICES[r.service].badge} dot>
+                          {SERVICES[r.service].label}
+                        </Badge>
+                      </TD>
+                      <TD
+                        className={
+                          stale ? "font-semibold text-critical-deep" : "text-ink-secondary"
+                        }
+                      >
+                        {r.trial_planned_month!.slice(0, 7)}
+                        {stale && <span className="ml-1 text-xs">予定月を過ぎた</span>}
+                      </TD>
+                      <TD numeric>
+                        {r.amount_expected ? formatJPY(r.amount_expected) : "—"}
+                      </TD>
+                      <TD>
+                        <div className="flex gap-1.5">
+                          <ConfirmForm
+                            action={startTrial}
+                            message={`${r.customers?.name} のトライアルを今日から開始にします。よろしいですか？`}
+                          >
+                            <input type="hidden" name="id" value={r.id} />
+                            <Button size="sm" variant="outline" type="submit">
+                              トライアル開始
+                            </Button>
+                          </ConfirmForm>
+                          <Link href={`/deals/${r.id}`}>
+                            <Button size="sm" variant="ghost">編集</Button>
+                          </Link>
+                        </div>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="今月の請求" value={formatJPY(monthTotal)} />

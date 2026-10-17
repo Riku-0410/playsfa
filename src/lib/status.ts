@@ -11,6 +11,8 @@ export const SERVICES = {
 export const DEAL_STAGES = {
   lead: { label: "リード", badge: "neutral" },
   contacted: { label: "アプローチ中", badge: "neutral" },
+  /** トライアルに入れそう。予定月(deals.trial_planned_month)の見込みに数える */
+  trial_planned: { label: "トライアル予定", badge: "info" },
   trial: { label: "トライアル中", badge: "accent" },
   negotiation: { label: "商談中", badge: "warn" },
   won: { label: "成約", badge: "good" },

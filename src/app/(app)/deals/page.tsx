@@ -51,7 +51,7 @@ export default async function DealsPage({
   let query = db
     .from("deals")
     .select(
-      "id, service, stage, amount_expected, trial_end, competitor, expected_billing_start, created_at, updated_at, customers!inner(id, name)",
+      "id, service, stage, amount_expected, trial_planned_month, trial_end, competitor, expected_billing_start, created_at, updated_at, customers!inner(id, name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -242,6 +242,11 @@ export default async function DealsPage({
                       <Badge variant={DEAL_STAGES[d.stage].badge} dot>
                         {DEAL_STAGES[d.stage].label}
                       </Badge>
+                      {d.stage === "trial_planned" && d.trial_planned_month && (
+                        <span className="ml-1.5 text-xs text-ink-secondary">
+                          {Number(d.trial_planned_month.slice(5, 7))}月
+                        </span>
+                      )}
                     </TD>
                     <TD numeric className="font-semibold">
                       {d.amount_expected != null

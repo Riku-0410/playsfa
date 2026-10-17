@@ -413,6 +413,12 @@ export default function DesignPage() {
                 <p className="text-xs font-semibold text-ink-secondary">系列色(baskestats)</p>
                 <Meter value={3} max={5} color={SERVICES.baskestats.seriesVar} />
               </div>
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-ink-secondary">
+                  見込みを積む(実績3 + 見込み2 / 目標8)
+                </p>
+                <Meter value={3} secondary={2} max={8} color={SERVICES.playcut.seriesVar} />
+              </div>
             </CardBody>
           </Card>
           <Card>

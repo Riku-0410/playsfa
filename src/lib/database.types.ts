@@ -337,6 +337,7 @@ export type Database = {
           service: Database["public"]["Enums"]["service_tag"]
           stage: Database["public"]["Enums"]["deal_stage"]
           trial_end: string | null
+          trial_planned_month: string | null
           trial_start: string | null
           updated_at: string
         }
@@ -353,6 +354,7 @@ export type Database = {
           service: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
           trial_end?: string | null
+          trial_planned_month?: string | null
           trial_start?: string | null
           updated_at?: string
         }
@@ -369,6 +371,7 @@ export type Database = {
           service?: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
           trial_end?: string | null
+          trial_planned_month?: string | null
           trial_start?: string | null
           updated_at?: string
         }
@@ -583,6 +586,7 @@ export type Database = {
       deal_stage:
         | "lead"
         | "contacted"
+        | "trial_planned"
         | "trial"
         | "negotiation"
         | "won"
@@ -723,7 +727,15 @@ export const Constants = {
       activity_type: ["call", "email", "meeting", "memo", "task"],
       billing_cycle: ["semiannual", "annual"],
       contract_status: ["pending", "active", "ended", "churned"],
-      deal_stage: ["lead", "contacted", "trial", "negotiation", "won", "lost"],
+      deal_stage: [
+        "lead",
+        "contacted",
+        "trial_planned",
+        "trial",
+        "negotiation",
+        "won",
+        "lost",
+      ],
       gender_category: ["mens", "womens", "mixed"],
       invoice_status: ["unsent", "sent", "paid", "overdue", "void"],
       service_tag: ["playcut", "baskestats"],

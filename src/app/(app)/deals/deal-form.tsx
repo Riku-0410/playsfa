@@ -13,6 +13,7 @@ type DealDefaults = {
   service?: string;
   stage?: string;
   amount_expected?: number | null;
+  trial_planned_month?: string | null;
   trial_start?: string | null;
   trial_end?: string | null;
   competitor?: string | null;
@@ -134,6 +135,20 @@ export function DealForm({
           <ServiceAmountFields defaultService={deal?.service ?? "baskestats"} />
         </>
       )}
+      <div className="grid grid-cols-2 gap-4">
+        <Field>
+          <Label htmlFor="deal-trial-planned">トライアル予定月</Label>
+          <Input
+            id="deal-trial-planned"
+            name="trial_planned_month"
+            type="month"
+            defaultValue={deal?.trial_planned_month?.slice(0, 7) ?? ""}
+          />
+          <FieldHint>
+            ステージが「トライアル予定」のとき、この月の見込みに数えます(空なら今月)
+          </FieldHint>
+        </Field>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <Field>
           <Label htmlFor="deal-trial-start">トライアル開始</Label>
