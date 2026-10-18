@@ -10,12 +10,13 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, addMonths, monthBoundsJST, todayJST } from "@/lib/dates";
-import { formatJPY, formatJPYCompact } from "@/lib/format";
+import { formatCountRange, formatJPY, formatJPYCompact } from "@/lib/format";
 import { monthClock, pace, PACE_VERDICTS, weekStartDate, type MonthClock } from "@/lib/pace";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
+import { currentPeriod, KPI_SERVICES, kpiSummary } from "@/lib/kpi";
 import { createMissingInvoice, endContract } from "./contracts/actions";
 import { startTrial } from "./deals/actions";
 import { markSent, registerPayment } from "./invoices/actions";
@@ -85,14 +86,6 @@ function TargetRow({
   );
 }
 
-/** 週あたり件数を「2〜3件」「2件」「1件未満」のように(小数を見せない) */
-function weeklyText(n: number): string {
-  if (n < 1) return "1件未満";
-  const r = Math.round(n);
-  if (Math.abs(n - r) < 0.15) return `${r}件`;
-  return `${Math.floor(n)}〜${Math.ceil(n)}件`;
-}
-
 /**
  * 月間目標に対するペース。今週の目標(何曜に見ても同じ)と今週の実績、先週までのペース。
  * 目標が未設定なら何も出さない
@@ -150,7 +143,7 @@ function PaceSummary({
             )}
           </p>
           {p.pastWeekly !== null && (
-            <p>これまでのペース 週に{weeklyText(p.pastWeekly)}</p>
+            <p>これまでのペース 週に{formatCountRange(p.pastWeekly)}</p>
           )}
         </div>
       )}
@@ -183,7 +176,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi] =
     await Promise.all([
       db
         .from("invoices")
@@ -247,6 +240,7 @@ export default async function DashboardPage({
         .eq("stage", "trial_planned")
         .lte("trial_planned_month", kpiStart)
         .order("trial_planned_month"),
+      kpiSummary(db, currentPeriod(today), today),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -531,6 +525,33 @@ export default async function DashboardPage({
           </form>
         </CardBody>
       </Card>
+
+      <Link
+        href="/kpi"
+        className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-card bg-surface px-6 py-3.5 text-sm shadow-card transition-colors hover:bg-sunken/60"
+      >
+        <span className="font-bold">{kpi.period.label}の累計</span>
+        {KPI_SERVICES.map((s) => {
+          const diff = kpi.toDate.actual[s] - kpi.toDate.target[s];
+          return (
+            <span key={s} className="flex items-center gap-1.5">
+              <span
+                className="size-2 rounded-full"
+                style={{ background: SERVICES[s].seriesVar }}
+              />
+              {SERVICES[s].label} {kpi.toDate.actual[s]} / {kpi.toDate.target[s]}件
+              <span
+                className={
+                  diff >= 0 ? "font-semibold text-good-deep" : "font-semibold text-critical-deep"
+                }
+              >
+                {diff >= 0 ? `+${diff}` : diff}
+              </span>
+            </span>
+          );
+        })}
+        <span className="ml-auto text-xs font-semibold text-ink-secondary">KPIを見る →</span>
+      </Link>
 
       {(plannedRows.length > 0 || stalePlannedRows.length > 0) && (
         <Card>

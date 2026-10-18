@@ -49,6 +49,13 @@ const NAV = [
     ),
   },
   {
+    href: "/kpi",
+    label: "KPI",
+    icon: (
+      <path d="M8 13.5a5.5 5.5 0 1 0 0-11 5.5 5.5 0 0 0 0 11Zm0-3a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
+    ),
+  },
+  {
     href: "/reports",
     label: "レポート",
     icon: (
