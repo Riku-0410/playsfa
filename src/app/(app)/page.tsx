@@ -10,8 +10,8 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import { contractEndDate, isEndingSoon } from "@/lib/billing";
 import { addDaysJST, addMonths, monthBoundsJST, todayJST } from "@/lib/dates";
-import { formatCountRange, formatJPY, formatJPYCompact } from "@/lib/format";
-import { monthClock, pace, PACE_VERDICTS, weekStartDate, type MonthClock } from "@/lib/pace";
+import { formatJPY, formatJPYCompact } from "@/lib/format";
+import { monthClock, pace, PACE_VERDICTS, type MonthClock } from "@/lib/pace";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
@@ -87,7 +87,7 @@ function TargetRow({
 }
 
 /**
- * 月間目標に対するペース。今週の目標(何曜に見ても同じ)と今週の実績、先週までのペース。
+ * 月間目標に対するペース。残り日数とあと何件、日割りのペースに対して何件ビハインド(先行)か。
  * 目標が未設定なら何も出さない
  */
 function PaceSummary({
@@ -95,36 +95,34 @@ function PaceSummary({
   target,
   actual,
   planned,
-  week,
   showBadge = true,
 }: {
   clock: MonthClock;
   target: number;
   actual: number;
-  /** トライアル予定(見込み)。「今月あと○件」から差し引く */
+  /** トライアル予定(見込み)。「あと○件」から差し引く */
   planned: number;
-  /** 今週トライアルが始まった件数 */
-  week: number;
   showBadge?: boolean;
 }) {
   if (target <= 0) return null;
-  const p = pace(clock, target, actual, week);
+  const p = pace(clock, target, actual);
   const verdict = p.verdict ? PACE_VERDICTS[p.verdict] : null;
+  const left = target - actual - planned;
   return (
     <div className="space-y-1">
       {verdict && showBadge && (
         <Badge variant={verdict.badge} dot>{verdict.label}</Badge>
       )}
-      {clock.week && p.verdict === "achieved" && (
+      {clock.current && p.verdict === "achieved" && (
         <p className="text-xs font-semibold text-good-deep">目標を達成しました</p>
       )}
-      {clock.week && p.verdict !== "achieved" && (
-        <div className="space-y-0.5 text-xs text-ink-secondary">
-          <p className="pb-0.5 text-sm text-ink">
-            {target - actual - planned > 0 ? (
+      {clock.current && p.verdict !== "achieved" && (
+        <div className="space-y-0.5">
+          <p className="text-sm text-ink">
+            {left > 0 ? (
               <>
-                今月あと
-                <span className="mx-0.5 text-base font-bold">{target - actual - planned}</span>件
+                残り{p.remainingDays}日で あと
+                <span className="mx-0.5 text-base font-bold">{left}</span>件
               </>
             ) : (
               <span className="font-bold">見込みがすべて入れば達成</span>
@@ -133,18 +131,22 @@ function PaceSummary({
               <span className="ml-1 text-xs text-ink-muted">(見込み{planned}件を差し引き)</span>
             )}
           </p>
-          <p>
-            今週の目標 <span className="font-semibold text-ink">{p.weekGoal}件</span> → いま
-            {week}件
-            {p.weekLeft > 0 ? (
-              <span className="font-semibold text-critical-deep">(あと{p.weekLeft}件)</span>
-            ) : (
-              <span className="font-semibold text-good-deep">(クリア)</span>
-            )}
+          <p
+            className={
+              p.lead < 0
+                ? "text-sm font-semibold text-critical-deep"
+                : p.lead > 0
+                  ? "text-sm font-semibold text-good-deep"
+                  : "text-sm font-semibold text-ink"
+            }
+            title={`目標${target}件を月の日数で割ると、今日までに${p.expected}件のペース`}
+          >
+            {p.lead < 0
+              ? `ペースより${-p.lead}件ビハインド`
+              : p.lead > 0
+                ? `ペースより${p.lead}件先行`
+                : "ペースどおり"}
           </p>
-          {p.pastWeekly !== null && (
-            <p>これまでのペース 週に{formatCountRange(p.pastWeekly)}</p>
-          )}
         </div>
       )}
     </div>
@@ -203,7 +205,7 @@ export default async function DashboardPage({
         .eq("status", "active"),
       db
         .from("deals")
-        .select("service, amount_expected, trial_start, customers(owner_name)")
+        .select("service, amount_expected, customers(owner_name)")
         .gte("trial_start", kpiStart)
         .lte("trial_start", kpiEnd),
       db
@@ -281,10 +283,8 @@ export default async function DashboardPage({
     actualOf.set(key, (actualOf.get(key) ?? 0) + 1);
     amountOf.set(key, (amountOf.get(key) ?? 0) + amount);
   };
-  // ペース: 月の経過と、今週(月曜〜)に始まったトライアル件数
+  // ペース: 月の経過
   const clock = monthClock(kpiYM, today);
-  const weekStart = weekStartDate(kpiYM, clock);
-  const weekOf = new Map<string, number>();
   let unassignedTrials = 0;
   let noAmountTrials = 0;
   for (const r of monthTrials.data ?? []) {
@@ -294,11 +294,6 @@ export default async function DashboardPage({
     const owner = r.customers?.owner_name;
     if (owner) bump(`${owner}|${r.service}`, amount);
     else unassignedTrials += 1;
-    if (weekStart && r.trial_start && r.trial_start >= weekStart) {
-      for (const k of [`|${r.service}`, ...(owner ? [`${owner}|${r.service}`] : [])]) {
-        weekOf.set(k, (weekOf.get(k) ?? 0) + 1);
-      }
-    }
   }
   /** 担当者(全社は '')のサービス合計。目標のあるサービスがあればそれだけで数える(目標と実績の範囲を揃える) */
   const sumOf = (m: Map<string, number>, rep: string) => {
@@ -414,7 +409,6 @@ export default async function DashboardPage({
                       target={kpiTarget}
                       actual={kpiActual}
                       planned={kpiPlanned}
-                      week={sumOf(weekOf, "")}
                     />
                   </div>
                   <p className="mt-3 text-xs text-ink-muted">{kpiMonthLabel}の積み上げ見込額</p>
@@ -459,7 +453,7 @@ export default async function DashboardPage({
                     const repTarget = sumOf(targetOf, rep);
                     const repPace =
                       repTarget > 0
-                        ? pace(clock, repTarget, sumOf(actualOf, rep), sumOf(weekOf, rep))
+                        ? pace(clock, repTarget, sumOf(actualOf, rep))
                         : null;
                     const verdict = repPace?.verdict ? PACE_VERDICTS[repPace.verdict] : null;
                     return (
@@ -483,7 +477,6 @@ export default async function DashboardPage({
                         target={repTarget}
                         actual={sumOf(actualOf, rep)}
                         planned={sumOf(plannedOf, rep)}
-                        week={sumOf(weekOf, rep)}
                       />
                       <input type="hidden" name={`rep_name_${i}`} value={rep} />
                       {SERVICE_KEYS.map((s) => (
