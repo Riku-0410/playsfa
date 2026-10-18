@@ -64,12 +64,15 @@ export function StatCard({
   value,
   delta,
   trend,
+  note,
   icon,
   className,
 }: {
   label: string;
   value: string;
   delta?: Delta;
+  /** 値の下に添える補足(内訳など) */
+  note?: React.ReactNode;
   /** 12点程度の推移。渡すとスパークラインを表示 */
   trend?: number[];
   icon?: React.ReactNode;
@@ -92,6 +95,7 @@ export function StatCard({
         </p>
         {trend && trend.length >= 2 && <Sparkline values={trend} />}
       </div>
+      {note && <p className="mt-2 text-xs text-ink-secondary">{note}</p>}
       {delta && (
         <p className="mt-2.5 flex items-baseline gap-1.5 text-xs">
           <span

@@ -217,6 +217,11 @@ export default function DesignPage() {
             delta={{ value: "+¥240,000", direction: "up", vs: "先月" }}
           />
           <StatCard
+            label="今月の入金残"
+            value="¥2,136,000"
+            note="うち期限超過 ¥652,000"
+          />
+          <StatCard
             label="未入金"
             value="¥240,000"
             delta={{ value: "1件", direction: "up", upIsGood: false, vs: "先週" }}

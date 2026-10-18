@@ -182,7 +182,7 @@ export default async function DashboardPage({
     await Promise.all([
       db
         .from("invoices")
-        .select("total, status")
+        .select("total, status, due_date")
         .gte("due_date", monthStart)
         .lte("due_date", monthEnd)
         .neq("status", "void"),
@@ -272,6 +272,10 @@ export default async function DashboardPage({
   // 今月の入金残 = 期限が今月でまだ入金されていない分(未送付も含む)
   const monthRemaining = (monthInvoices.data ?? [])
     .filter((r) => r.status !== "paid")
+    .reduce((a, r) => a + r.total, 0);
+  // うち期限を過ぎた分(期限超過の欄に出ている、今月期限の分)
+  const monthRemainingOverdue = (monthInvoices.data ?? [])
+    .filter((r) => r.status !== "paid" && r.due_date < today)
     .reduce((a, r) => a + r.total, 0);
   // 期限を過ぎた未入金。送付の記録がないもの(送ったが「送付済に」を押していない等)も含める
   const overdueRows = unpaid.data ?? [];
@@ -637,7 +641,15 @@ export default async function DashboardPage({
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard label="今月の請求" value={formatJPY(monthTotal)} />
-        <StatCard label="今月の入金残" value={formatJPY(monthRemaining)} />
+        <StatCard
+          label="今月の入金残"
+          value={formatJPY(monthRemaining)}
+          note={
+            monthRemainingOverdue > 0
+              ? `うち期限超過 ${formatJPY(monthRemainingOverdue)}`
+              : undefined
+          }
+        />
         <StatCard label="未回収(期限超過)" value={formatJPY(unpaidTotal)} />
         <StatCard label="期限超過" value={`${overdueRows.length}件`} />
         <StatCard
