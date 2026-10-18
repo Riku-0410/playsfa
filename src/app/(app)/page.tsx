@@ -178,7 +178,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi, dueThisMonth] =
     await Promise.all([
       db
         .from("invoices")
@@ -243,6 +243,14 @@ export default async function DashboardPage({
         .lte("trial_planned_month", kpiStart)
         .order("trial_planned_month"),
       kpiSummary(db, currentPeriod(today), today),
+      // 今月の入金予定: 支払期限が今日〜今月末で未入金(過ぎたものは期限超過の欄)
+      db
+        .from("invoices")
+        .select("id, total, due_date, invoice_number, status, customers(name, owner_name)")
+        .in("status", ["unsent", "sent"])
+        .gte("due_date", today)
+        .lte("due_date", monthEnd)
+        .order("due_date"),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -1013,6 +1021,66 @@ export default async function DashboardPage({
                           </Button>
                         </form>
                       </div>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
+
+      {(dueThisMonth.data ?? []).length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              今月の入金予定 {(dueThisMonth.data ?? []).length}件
+              <span className="ml-2 text-sm font-semibold text-ink-secondary">
+                {formatJPY((dueThisMonth.data ?? []).reduce((a, r) => a + r.total, 0))}
+              </span>
+            </CardTitle>
+            <p className="text-xs text-ink-muted">支払期限が今日〜今月末で、まだ入金のない請求書</p>
+          </CardHeader>
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>支払期限</TH>
+                  <TH>顧客</TH>
+                  <TH>担当</TH>
+                  <TH>請求番号</TH>
+                  <TH numeric>金額</TH>
+                  <TH>ステータス</TH>
+                  <TH>アクション</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {(dueThisMonth.data ?? []).map((r) => (
+                  <TR key={r.id}>
+                    <TD className="text-ink-secondary">{r.due_date}</TD>
+                    <TD className="font-semibold">{r.customers?.name}</TD>
+                    <TD className="text-ink-secondary">
+                      {r.customers?.owner_name ?? "—"}
+                    </TD>
+                    <TD>{r.invoice_number ?? "—"}</TD>
+                    <TD numeric className="font-semibold">
+                      {formatJPY(r.total)}
+                    </TD>
+                    <TD>
+                      <Badge variant={INVOICE_STATUSES[r.status].badge} dot>
+                        {INVOICE_STATUSES[r.status].label}
+                      </Badge>
+                    </TD>
+                    <TD>
+                      <ConfirmForm
+                        action={registerPayment}
+                        message={`${r.customers?.name} ${formatJPY(r.total)}(税込)の入金を今日の日付で登録します。`}
+                      >
+                        <input type="hidden" name="id" value={r.id} />
+                        <Button size="sm" variant="dark" type="submit">
+                          入金登録
+                        </Button>
+                      </ConfirmForm>
                     </TD>
                   </TR>
                 ))}
