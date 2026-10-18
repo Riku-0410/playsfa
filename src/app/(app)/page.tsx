@@ -967,7 +967,12 @@ export default async function DashboardPage({
       {overdueRows.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-critical-deep">期限超過の未入金</CardTitle>
+            <CardTitle className="text-critical-deep">
+              期限超過の未入金 {overdueRows.length}件
+              <span className="ml-2 text-sm font-semibold text-ink-secondary">
+                {formatJPY(unpaidTotal)}
+              </span>
+            </CardTitle>
           </CardHeader>
           <CardBody className="px-2 pt-2">
             <Table>
