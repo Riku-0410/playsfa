@@ -29,7 +29,16 @@ export type NewContract = {
   fees?: ContractFee[];
   /** 更新で作る契約なら前の契約 */
   previous_contract_id?: string | null;
+  /** 登録時の活動メモ。条件と一緒に顧客の活動ログに残す */
+  memo?: ContractMemo | null;
 };
+
+export type ContractMemo = { content: string; author_name: string };
+
+/** 契約条件の1行(活動ログ用) */
+function termsLine(cycle: BillingCycle, amount: number, start: string): string {
+  return `${BILLING_CYCLES[cycle]} ${amount.toLocaleString()}円/回(税抜)・${start}〜`;
+}
 
 /** 同じ顧客・サービスで期間の重なる課金待ち/課金中の契約がすでにある */
 export class DuplicateContractError extends Error {
@@ -173,6 +182,16 @@ export async function createContractWithInvoices(
       .eq("id", dealId);
   }
 
+  if (input.memo) {
+    await db.from("activities").insert({
+      customer_id: input.customer_id,
+      deal_id: dealId,
+      type: "memo",
+      content: `${SERVICES[input.service].label}の契約を登録(${termsLine(input.billing_cycle, input.amount_per_billing, input.billing_start_date)})\n${input.memo.content}`,
+      author_name: input.memo.author_name,
+    });
+  }
+
   return { contractId: contract.id, invoiceCount: drafts.length };
 }
 
@@ -183,6 +202,7 @@ export type RenewContractInput = {
   agreement_date: string;
   billing_start_date: string;
   fees: ContractFee[];
+  memo?: ContractMemo | null;
 };
 
 /** この契約を更新して作った契約(なければ null) */
@@ -254,7 +274,8 @@ export async function renewContract(
     customer_id: c.customer_id,
     deal_id: c.deal_id,
     type: "memo",
-    content: `${SERVICES[c.service].label}の契約を更新(${input.billing_start_date}〜)${changes.length ? ": " + changes.join(", ") : ""}`,
+    content: `${SERVICES[c.service].label}の契約を更新(${input.billing_start_date}〜)${changes.length ? ": " + changes.join(", ") : ""}${input.memo ? `\n${input.memo.content}` : ""}`,
+    author_name: input.memo?.author_name ?? null,
     occurred_at: input.agreement_date,
   });
 

@@ -8,10 +8,12 @@ import {
   changeBillingTerms as changeBillingTermsRecord,
   createContractWithInvoices,
   createInvoiceForPeriod,
+  type ContractMemo,
   DuplicateContractError,
   type NewContract,
   renewContract as renewContractRecord,
 } from "@/lib/contracts";
+import { ACTIVITY_AUTHORS } from "@/lib/activity";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import {
@@ -34,6 +36,17 @@ function parseFees(formData: FormData) {
     .filter((f) => f.description && Number.isFinite(f.amount) && f.amount > 0);
 }
 
+/** 契約フォームの活動メモ(任意)。書いたなら記入者は必須 */
+function parseMemo(formData: FormData): ContractMemo | null {
+  const content = str(formData, "memo");
+  if (!content) return null;
+  const author = str(formData, "author_name");
+  if (!author || !ACTIVITY_AUTHORS.includes(author)) {
+    throw new Error("活動メモの記入者を選択してください");
+  }
+  return { content, author_name: author };
+}
+
 export async function createContract(formData: FormData) {
   const db = createAdminClient();
   const amount = num(formData, "amount_per_billing");
@@ -53,6 +66,7 @@ export async function createContract(formData: FormData) {
       agreement_date: requiredStr(formData, "agreement_date"),
       billing_start_date: requiredStr(formData, "billing_start_date"),
       fees: parseFees(formData),
+      memo: parseMemo(formData),
     }));
   } catch (e) {
     // 二重登録はフォームに戻して既存契約を案内する(本番ではthrowのメッセージが伏せられるため)
@@ -182,6 +196,7 @@ export async function renewContract(formData: FormData) {
     agreement_date: requiredStr(formData, "agreement_date"),
     billing_start_date: requiredStr(formData, "billing_start_date"),
     fees: parseFees(formData),
+    memo: parseMemo(formData),
   });
   revalidatePath("/contracts");
   revalidatePath("/invoices");

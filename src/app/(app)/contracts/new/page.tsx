@@ -10,6 +10,7 @@ import { todayJST } from "@/lib/dates";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createContract } from "../actions";
+import { ContractMemoFields } from "../contract-memo-fields";
 import { FeeRows } from "../fee-rows";
 
 export const dynamic = "force-dynamic";
@@ -165,6 +166,9 @@ export default async function NewContractPage({
             </div>
             <div className="border-t border-line pt-4">
               <FeeRows />
+            </div>
+            <div className="border-t border-line pt-4">
+              <ContractMemoFields />
             </div>
             <div className="flex justify-end pt-2">
               <Button type="submit">契約を登録して請求を生成 →</Button>

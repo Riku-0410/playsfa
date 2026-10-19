@@ -14,6 +14,7 @@ import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renewContract } from "../../actions";
+import { ContractMemoFields } from "../../contract-memo-fields";
 import { FeeRows } from "../../fee-rows";
 
 export const dynamic = "force-dynamic";
@@ -222,6 +223,9 @@ export default async function RenewContractPage({
               </div>
               <div className="border-t border-line pt-4">
                 <FeeRows initial={recurringFees} />
+              </div>
+              <div className="border-t border-line pt-4">
+                <ContractMemoFields />
               </div>
               <div className="flex justify-end pt-2">
                 <Button type="submit">新しい契約を登録して請求を生成 →</Button>
