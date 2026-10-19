@@ -7,7 +7,7 @@ import { MonthlyStackedColumns } from "@/components/monthly-stacked-columns";
 import { cn } from "@/lib/cn";
 import { todayJST } from "@/lib/dates";
 import { formatCountRange } from "@/lib/format";
-import { currentPeriod, KPI_SERVICES, kpiSummary } from "@/lib/kpi";
+import { currentPeriod, kpiSummary } from "@/lib/kpi";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -36,11 +36,11 @@ export default async function KpiPage() {
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title={`${period.label} KPI`}
-        description={`${ymLabel(period.start)}〜${ymLabel(kpi.end)}・トライアル獲得数(トライアル導入日ベース)・毎月 ${KPI_SERVICES.map((s) => `${SERVICES[s].label} ${period.monthly[s]}件`).join(" / ")}`}
+        description={`${ymLabel(period.start)}〜${ymLabel(kpi.end)}・トライアル獲得数(トライアル導入日ベース)・毎月 ${kpi.services.map((s) => `${SERVICES[s].label} ${period.monthly[s]}件`).join(" / ")}`}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
-        {KPI_SERVICES.map((s) => {
+        {kpi.services.map((s) => {
           const actual = kpi.toDate.actual[s];
           const target = kpi.toDate.target[s];
           const diff = actual - target;
@@ -99,9 +99,9 @@ export default async function KpiPage() {
             title="月別のトライアル獲得"
             data={kpi.months.map((m) => ({
               key: m.ym,
-              values: KPI_SERVICES.map((s) => m.actual[s]),
+              values: kpi.services.map((s) => m.actual[s]),
             }))}
-            series={KPI_SERVICES.map((s) => ({
+            series={kpi.services.map((s) => ({
               key: s,
               label: SERVICES[s].label,
               color: SERVICES[s].seriesVar,
@@ -120,12 +120,12 @@ export default async function KpiPage() {
             <thead>
               <tr>
                 <TH>月</TH>
-                {KPI_SERVICES.map((s) => (
+                {kpi.services.map((s) => (
                   <TH key={s} numeric>
                     {SERVICES[s].label}(目標{period.monthly[s]})
                   </TH>
                 ))}
-                {KPI_SERVICES.map((s) => (
+                {kpi.services.map((s) => (
                   <TH key={s} numeric>
                     {SERVICES[s].label} 累計
                   </TH>
@@ -141,7 +141,7 @@ export default async function KpiPage() {
                       <span className="ml-1.5 text-xs font-normal text-ink-muted">途中</span>
                     )}
                   </TD>
-                  {KPI_SERVICES.map((s) => (
+                  {kpi.services.map((s) => (
                     <TD
                       key={s}
                       numeric
@@ -156,7 +156,7 @@ export default async function KpiPage() {
                       {m.future ? "—" : `${m.actual[s]}件`}
                     </TD>
                   ))}
-                  {KPI_SERVICES.map((s) => (
+                  {kpi.services.map((s) => (
                     <TD key={s} numeric>
                       {m.future ? (
                         "—"

@@ -14,7 +14,7 @@ const notoSansJP = Noto_Sans_JP({
 
 export const metadata: Metadata = {
   title: "playsfa",
-  description: "playcut / baskestats のSFA",
+  description: "playcut / baskestats / playone のSFA",
 };
 
 export default function RootLayout({

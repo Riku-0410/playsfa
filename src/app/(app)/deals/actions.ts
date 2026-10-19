@@ -5,11 +5,12 @@ import { redirect } from "next/navigation";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import type { Database } from "@/lib/database.types";
+import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addActivity } from "../customers/actions";
 
 type Stage = Database["public"]["Enums"]["deal_stage"];
-type Service = "playcut" | "baskestats";
+type Service = Database["public"]["Enums"]["service_tag"];
 
 /** トライアル予定月(`YYYY-MM`)を月初日に。トライアル予定で未入力なら今月 */
 function plannedMonth(formData: FormData, stage: Stage): string | null {
@@ -36,7 +37,7 @@ function dealValues(formData: FormData) {
 export async function createDeal(formData: FormData) {
   const db = createAdminClient();
   const services = [...new Set(formData.getAll("service").map(String))].filter(
-    (s): s is Service => s === "playcut" || s === "baskestats",
+    (s): s is Service => s in SERVICES,
   );
   if (services.length === 0) {
     throw new Error("サービスを1つ以上選択してください");

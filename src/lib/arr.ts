@@ -1,4 +1,5 @@
 import type { Database } from "./database.types";
+import { SERVICES } from "./status";
 
 type Service = Database["public"]["Enums"]["service_tag"];
 type BillingCycle = Database["public"]["Enums"]["billing_cycle"];
@@ -40,10 +41,9 @@ function contractArr(c: ArrContract): number {
 
 /** 渡された契約群のARR。ステータスの絞り込みは呼び出し側の責任 */
 export function calcArr(contracts: ArrContract[]): ArrBreakdown {
-  const byService: ArrBreakdown["byService"] = {
-    playcut: { total: 0, count: 0 },
-    baskestats: { total: 0, count: 0 },
-  };
+  const byService = Object.fromEntries(
+    (Object.keys(SERVICES) as Service[]).map((s) => [s, { total: 0, count: 0 }]),
+  ) as ArrBreakdown["byService"];
   let usage = 0;
   let recurringFees = 0;
 

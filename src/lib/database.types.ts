@@ -593,7 +593,7 @@ export type Database = {
         | "lost"
       gender_category: "mens" | "womens" | "mixed"
       invoice_status: "unsent" | "sent" | "paid" | "overdue" | "void"
-      service_tag: "playcut" | "baskestats"
+      service_tag: "playcut" | "baskestats" | "playone"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -738,7 +738,7 @@ export const Constants = {
       ],
       gender_category: ["mens", "womens", "mixed"],
       invoice_status: ["unsent", "sent", "paid", "overdue", "void"],
-      service_tag: ["playcut", "baskestats"],
+      service_tag: ["playcut", "baskestats", "playone"],
     },
   },
 } as const

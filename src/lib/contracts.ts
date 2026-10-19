@@ -19,7 +19,7 @@ export type ContractFee = {
 export type NewContract = {
   customer_id: string;
   deal_id?: string | null;
-  service: "playcut" | "baskestats";
+  service: Database["public"]["Enums"]["service_tag"];
   billing_cycle: BillingCycle;
   amount_per_billing: number;
   tax_rate: number;

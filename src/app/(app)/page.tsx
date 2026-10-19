@@ -16,7 +16,7 @@ import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
-import { currentPeriod, KPI_SERVICES, kpiSummary } from "@/lib/kpi";
+import { currentPeriod, kpiSummary } from "@/lib/kpi";
 import { createMissingInvoice, endContract } from "./contracts/actions";
 import { startTrial } from "./deals/actions";
 import { markSent, registerPayment } from "./invoices/actions";
@@ -536,7 +536,7 @@ export default async function DashboardPage({
         className="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-card bg-surface px-6 py-3.5 text-sm shadow-card transition-colors hover:bg-sunken/60"
       >
         <span className="font-bold">{kpi.period.label}の累計</span>
-        {KPI_SERVICES.map((s) => {
+        {kpi.services.map((s) => {
           const diff = kpi.toDate.actual[s] - kpi.toDate.target[s];
           return (
             <span key={s} className="flex items-center gap-1.5">

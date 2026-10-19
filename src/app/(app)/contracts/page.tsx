@@ -103,16 +103,15 @@ export default async function ContractsPage({
           </Link>
         }
       />
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="ARR(課金中)" value={formatJPY(arr.total)} />
-        <StatCard
-          label={`ARR ${SERVICES.playcut.label}`}
-          value={formatJPY(arr.byService.playcut.total)}
-        />
-        <StatCard
-          label={`ARR ${SERVICES.baskestats.label}`}
-          value={formatJPY(arr.byService.baskestats.total)}
-        />
+        {(Object.keys(SERVICES) as (keyof typeof SERVICES)[]).map((s) => (
+          <StatCard
+            key={s}
+            label={`ARR ${SERVICES[s].label}`}
+            value={formatJPY(arr.byService[s].total)}
+          />
+        ))}
       </div>
       <p className="text-xs text-ink-muted">
         課金中{arr.count}件の年換算。内訳は利用料 {formatJPY(arr.usage)} +

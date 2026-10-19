@@ -8,6 +8,7 @@ import {
   createContractWithInvoices,
   createInvoiceForPeriod,
   DuplicateContractError,
+  type NewContract,
   renewContract as renewContractRecord,
 } from "@/lib/contracts";
 import { todayJST } from "@/lib/dates";
@@ -44,7 +45,7 @@ export async function createContract(formData: FormData) {
     ({ contractId } = await createContractWithInvoices(db, {
       customer_id: customerId,
       deal_id: dealId,
-      service: requiredStr(formData, "service") as "playcut" | "baskestats",
+      service: requiredStr(formData, "service") as NewContract["service"],
       billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
       amount_per_billing: amount,
       tax_rate: 10,
