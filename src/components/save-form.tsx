@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { FormPendingContext } from "@/components/ui/button";
 
 /**
  * 保存成功後に前の画面へ戻るフォーム(編集用)。
@@ -9,6 +10,9 @@ import { useState } from "react";
  * 直リンクなどで履歴がない場合は fallback へ。
  * backOnSuccess=false なら素のフォームと同じ(作成系はサーバー側のredirectに任せる)。
  * アクションが失敗したときはクラッシュさせず、フォーム上部にエラーを表示する。
+ *
+ * <form action> に渡すとReactがアクション完了後にフォームを初期値へリセットし、
+ * エラー時に入力が消えてしまう。なので送信を自前で受けてアクションを呼ぶ。
  */
 export function SaveForm({
   action,
@@ -25,25 +29,34 @@ export function SaveForm({
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   return (
     <form
       className={className}
-      action={async (formData) => {
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (pending) return;
+        const formData = new FormData(
+          e.currentTarget,
+          (e.nativeEvent as SubmitEvent).submitter,
+        );
         setError(null);
-        try {
-          await action(formData);
-        } catch (e) {
-          // redirect()/notFound() はNextの制御フローなのでそのまま流す
-          const digest = (e as { digest?: string })?.digest;
-          if (typeof digest === "string" && digest.startsWith("NEXT_")) throw e;
-          setError(
-            "保存できませんでした。入力内容を確認してもう一度お試しください。",
-          );
-          return;
-        }
-        if (!backOnSuccess) return;
-        if (window.history.length > 1) router.back();
-        else router.push(fallback);
+        startTransition(async () => {
+          try {
+            await action(formData);
+          } catch (err) {
+            // redirect()/notFound() はNextの制御フローなのでそのまま流す
+            const digest = (err as { digest?: string })?.digest;
+            if (typeof digest === "string" && digest.startsWith("NEXT_")) throw err;
+            setError(
+              "保存できませんでした。入力内容を確認してもう一度お試しください。",
+            );
+            return;
+          }
+          if (!backOnSuccess) return;
+          if (window.history.length > 1) router.back();
+          else router.push(fallback);
+        });
       }}
     >
       {error && (
@@ -54,7 +67,7 @@ export function SaveForm({
           {error}
         </div>
       )}
-      {children}
+      <FormPendingContext value={pending}>{children}</FormPendingContext>
     </form>
   );
 }

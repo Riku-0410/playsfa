@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { useFormStatus } from "react-dom";
 import { cn } from "@/lib/cn";
 
@@ -23,6 +24,12 @@ export type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 /**
+ * <form action> を使わずに送信するフォーム(SaveForm)が、送信中であることを伝える。
+ * useFormStatus はその送信を拾えないため
+ */
+export const FormPendingContext = createContext(false);
+
+/**
  * フォームのaction実行中はsubmitボタンを自動で無効化し、二度押しによる
  * 二重送信(商談の二重作成・入金の二重登録など)を防ぐ。
  * useFormStatus は最も近い親<form>の送信状態を見るため、一覧内に並ぶ
@@ -33,7 +40,8 @@ function usePendingDisabled(
   disabled: boolean | undefined,
 ) {
   const { pending } = useFormStatus();
-  return disabled || (pending && type === "submit");
+  const savePending = useContext(FormPendingContext);
+  return disabled || ((pending || savePending) && type === "submit");
 }
 
 export function Button({

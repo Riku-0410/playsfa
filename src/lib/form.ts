@@ -11,10 +11,20 @@ export function requiredStr(fd: FormData, key: string): string {
   return v;
 }
 
-/** カンマ区切り数値も許容 */
+/**
+ * 数値の取り出し。日本語入力で打ちがちな書き方も許容する:
+ * 全角数字・カンマ・空白・「¥」「円」・「万」(8万 → 80000)
+ */
 export function num(fd: FormData, key: string): number | null {
-  const t = str(fd, key);
+  const raw = str(fd, key);
+  if (!raw) return null;
+  let t = raw.normalize("NFKC").replace(/[,\s¥円]/g, "");
+  let unit = 1;
+  if (t.endsWith("万")) {
+    unit = 10000;
+    t = t.slice(0, -1);
+  }
   if (!t) return null;
-  const n = Number(t.replace(/[,，]/g, ""));
+  const n = Number(t) * unit;
   return Number.isFinite(n) ? n : null;
 }

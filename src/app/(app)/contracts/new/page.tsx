@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardInset, CardTitle } from "@/components/ui/card";
 import { Field, FieldHint, Label } from "@/components/ui/field";
@@ -89,7 +90,12 @@ export default async function NewContractPage({
           <CardTitle>契約条件</CardTitle>
         </CardHeader>
         <CardBody>
-          <form action={createContract} className="space-y-4">
+          <SaveForm
+            action={createContract}
+            fallback="/contracts"
+            backOnSuccess={false}
+            className="space-y-4"
+          >
             {deal && <input type="hidden" name="deal_id" value={deal.id} />}
             <div className="grid grid-cols-2 gap-4">
               <Field>
@@ -173,7 +179,7 @@ export default async function NewContractPage({
             <div className="flex justify-end pt-2">
               <Button type="submit">契約を登録して請求を生成 →</Button>
             </div>
-          </form>
+          </SaveForm>
         </CardBody>
       </Card>
     </div>
