@@ -347,7 +347,7 @@ async function contractInvoiceRows(db: SupabaseClient<Database>, contractId: str
 }
 
 /**
- * 課金開始日を変えられない理由。変えられるなら null。
+ * 課金開始日・支払い方を変えられない理由。変えられるなら null。
  * 請求書がすべて未送付で、他の契約とまとめていないときだけ変えられる。
  */
 export async function billingStartBlocker(
@@ -355,7 +355,7 @@ export async function billingStartBlocker(
   contract: { id: string; status: string },
 ): Promise<string | null> {
   if (contract.status === "ended" || contract.status === "churned") {
-    return "満了・解約した契約は課金開始日を変えられません";
+    return "満了・解約した契約は変えられません";
   }
   const rows = await contractInvoiceRows(db, contract.id);
   if (rows.some((r) => r.invoices.status === "paid")) {
@@ -456,4 +456,120 @@ export async function changeBillingStart(
     })
     .eq("id", contractId);
   if (upError) throw upError;
+}
+
+/**
+ * 支払い方(サイクル・1回あたりの金額)の変更。決まる前に仮で登録した契約を直すためのもの。
+ * 未送付の請求書を新しいサイクルで作り直す。既存の請求書は期間順に使い回し
+ * (採番・メモはそのまま)、明細は契約から作り直す(手で直した行は消える)。
+ * 足りない分は追加、余った分は削除。請求書が契約の期間と揃っていない契約は変えない。
+ */
+export async function changeBillingTerms(
+  db: SupabaseClient<Database>,
+  contractId: string,
+  terms: { billing_cycle: BillingCycle; amount_per_billing: number },
+) {
+  const { data: c, error } = await db
+    .from("contracts")
+    .select("*, contract_fees(description, amount)")
+    .eq("id", contractId)
+    .single();
+  if (error) throw error;
+  if (
+    c.billing_cycle === terms.billing_cycle &&
+    c.amount_per_billing === terms.amount_per_billing
+  ) {
+    return;
+  }
+  const blocker = await billingStartBlocker(db, c);
+  if (blocker) throw new Error(blocker);
+
+  const rows = await contractInvoiceRows(db, contractId);
+  const oldStarts = computeInvoiceSchedule({
+    serviceLabel: SERVICES[c.service].label,
+    billingCycle: c.billing_cycle,
+    amountPerBilling: c.amount_per_billing,
+    taxRate: Number(c.tax_rate),
+    billingStartDate: c.billing_start_date,
+    termMonths: c.term_months,
+  }).map((d) => d.period_start);
+  const existing = [...new Map(rows.map((r) => [r.invoice_id, r.invoices.period_start]))]
+    .map(([id, periodStart]) => ({ id, periodStart }))
+    .sort((a, b) => a.periodStart.localeCompare(b.periodStart));
+  if (
+    existing.length !== oldStarts.length ||
+    existing.some((inv, k) => inv.periodStart !== oldStarts[k])
+  ) {
+    throw new Error(
+      "請求書が契約の期間と揃っていないため変えられません。契約を削除して登録し直してください",
+    );
+  }
+
+  const drafts = computeInvoiceSchedule({
+    serviceLabel: SERVICES[c.service].label,
+    billingCycle: terms.billing_cycle,
+    amountPerBilling: terms.amount_per_billing,
+    taxRate: Number(c.tax_rate),
+    billingStartDate: c.billing_start_date,
+    termMonths: c.term_months,
+    fees: c.contract_fees ?? [],
+  });
+
+  for (const [k, { items, ...d }] of drafts.entries()) {
+    let invoiceId = existing[k]?.id;
+    if (invoiceId) {
+      const { error: invError } = await db.from("invoices").update(d).eq("id", invoiceId);
+      if (invError) throw invError;
+      const { error: delError } = await db
+        .from("invoice_items")
+        .delete()
+        .eq("invoice_id", invoiceId);
+      if (delError) throw delError;
+    } else {
+      const { data: inserted, error: insError } = await db
+        .from("invoices")
+        .insert({
+          ...d,
+          customer_id: c.customer_id,
+          tax_rate: c.tax_rate,
+          status: "unsent",
+        })
+        .select("id")
+        .single();
+      if (insError) throw insError;
+      invoiceId = inserted.id;
+    }
+    const { error: itemError } = await db.from("invoice_items").insert(
+      items.map((it) => ({ ...it, invoice_id: invoiceId, contract_id: c.id })),
+    );
+    if (itemError) throw itemError;
+  }
+  const extra = existing.slice(drafts.length).map((inv) => inv.id);
+  if (extra.length > 0) {
+    const { error: delError } = await db.from("invoices").delete().in("id", extra);
+    if (delError) throw delError;
+  }
+
+  const { error: upError } = await db
+    .from("contracts")
+    .update(terms)
+    .eq("id", contractId);
+  if (upError) throw upError;
+
+  const changes: string[] = [];
+  if (terms.billing_cycle !== c.billing_cycle) {
+    changes.push(`${BILLING_CYCLES[c.billing_cycle]}→${BILLING_CYCLES[terms.billing_cycle]}`);
+  }
+  if (terms.amount_per_billing !== c.amount_per_billing) {
+    changes.push(
+      `請求額/回 ${c.amount_per_billing.toLocaleString()}→${terms.amount_per_billing.toLocaleString()}`,
+    );
+  }
+  await db.from("activities").insert({
+    customer_id: c.customer_id,
+    deal_id: c.deal_id,
+    type: "memo",
+    content: `${SERVICES[c.service].label}の契約の支払い方を変更: ${changes.join(", ")}`,
+    occurred_at: todayJST(),
+  });
 }

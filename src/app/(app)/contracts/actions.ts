@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import type { BillingCycle } from "@/lib/billing";
 import {
   changeBillingStart,
+  changeBillingTerms as changeBillingTermsRecord,
   createContractWithInvoices,
   createInvoiceForPeriod,
   DuplicateContractError,
@@ -187,6 +188,22 @@ export async function renewContract(formData: FormData) {
   revalidatePath("/reports");
   revalidatePath("/");
   redirect(`/invoices?contract=${contractId}`);
+}
+
+/** 支払い方(サイクル・1回あたりの金額)を変えて、未送付の請求書を作り直す */
+export async function changeBillingTerms(formData: FormData) {
+  const amount = num(formData, "amount_per_billing");
+  if (!amount || amount <= 0) throw new Error("請求額が不正です");
+  const id = requiredStr(formData, "id");
+  await changeBillingTermsRecord(createAdminClient(), id, {
+    billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
+    amount_per_billing: amount,
+  });
+  revalidatePath("/contracts");
+  revalidatePath("/invoices");
+  revalidatePath("/reports");
+  revalidatePath("/");
+  redirect(`/invoices?contract=${id}`);
 }
 
 /** 更新されなかった契約を満了にする。未送付の請求書は残っていない前提(残っていれば無効化) */

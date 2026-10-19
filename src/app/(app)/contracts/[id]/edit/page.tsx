@@ -13,7 +13,8 @@ import { billingStartBlocker, successorOf } from "@/lib/contracts";
 import { formatJPY } from "@/lib/format";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { deleteContract, updateContract } from "../../actions";
+import { changeBillingTerms, deleteContract, updateContract } from "../../actions";
+import { BillingTermsFields } from "../../billing-terms-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -30,10 +31,16 @@ export default async function EditContractPage({
     .eq("id", id)
     .single();
   if (!contract) notFound();
-  const [startBlocker, successor] = await Promise.all([
+  const [startBlocker, successor, { data: invoiceRows }] = await Promise.all([
     billingStartBlocker(db, contract),
     successorOf(db, contract.id),
+    db
+      .from("invoice_items")
+      .select("invoice_id, invoices!inner(status)")
+      .eq("contract_id", contract.id)
+      .neq("invoices.status", "void"),
   ]);
+  const invoiceCount = new Set((invoiceRows ?? []).map((r) => r.invoice_id)).size;
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -77,8 +84,8 @@ export default async function EditContractPage({
           </Link>
         )}
         <span className="text-xs text-ink-muted">
-          金額・サイクルは請求書が生成済みのため変更不可。課金開始日は請求書がすべて未送付のうちは変えられます。
-          更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で、作り直しは削除→再登録で。
+          課金開始日・支払い方は請求書がすべて未送付のうちは変えられます。
+          更新時の条件変更は「契約を更新」から。期の途中の調整は各請求書の編集で。
         </span>
       </CardInset>
 
@@ -136,6 +143,42 @@ export default async function EditContractPage({
               <Button type="submit">保存する</Button>
             </div>
           </SaveForm>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>支払い方</CardTitle>
+            <p className="mt-1 text-xs text-ink-muted">
+              年払いか半期払いか決まっていなければ仮で登録しておき、決まったらここで変えます
+            </p>
+          </div>
+        </CardHeader>
+        <CardBody>
+          {startBlocker ? (
+            <p className="text-sm text-ink-secondary">
+              {BILLING_CYCLES[contract.billing_cycle]}{" "}
+              {formatJPY(contract.amount_per_billing)}/回。{startBlocker}
+            </p>
+          ) : (
+            <ConfirmForm
+              action={changeBillingTerms}
+              message={`未送付の請求書${invoiceCount}枚を新しい支払い方で作り直します。請求書を手で直した内容(金額・追加した行)は消えます。よろしいですか？`}
+              className="space-y-4"
+            >
+              <input type="hidden" name="id" value={contract.id} />
+              <BillingTermsFields
+                cycle={contract.billing_cycle}
+                amount={contract.amount_per_billing}
+              />
+              <div className="flex justify-end">
+                <Button type="submit" variant="outline">
+                  支払い方を変えて請求書を作り直す
+                </Button>
+              </div>
+            </ConfirmForm>
+          )}
         </CardBody>
       </Card>
 
