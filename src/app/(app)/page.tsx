@@ -93,20 +93,18 @@ function PaceSummary({
   clock,
   target,
   actual,
-  planned,
   showBadge = true,
 }: {
   clock: MonthClock;
   target: number;
+  /** 実績のみ。見込み(トライアル予定)は「あと○件」から差し引かない */
   actual: number;
-  /** トライアル予定(見込み)。「あと○件」から差し引く */
-  planned: number;
   showBadge?: boolean;
 }) {
   if (target <= 0) return null;
   const p = pace(clock, target, actual);
   const verdict = p.verdict ? PACE_VERDICTS[p.verdict] : null;
-  const left = target - actual - planned;
+  const left = target - actual;
   return (
     <div className="space-y-1">
       {verdict && showBadge && (
@@ -118,17 +116,8 @@ function PaceSummary({
       {clock.current && p.verdict !== "achieved" && (
         <div className="space-y-0.5">
           <p className="text-sm text-ink">
-            {left > 0 ? (
-              <>
-                残り{p.remainingDays}日で あと
-                <span className="mx-0.5 text-base font-bold">{left}</span>件
-              </>
-            ) : (
-              <span className="font-bold">見込みがすべて入れば達成</span>
-            )}
-            {planned > 0 && (
-              <span className="ml-1 text-xs text-ink-muted">(見込み{planned}件を差し引き)</span>
-            )}
+            残り{p.remainingDays}日で あと
+            <span className="mx-0.5 text-base font-bold">{left}</span>件
           </p>
           <p
             className={
@@ -427,7 +416,6 @@ export default async function DashboardPage({
                       clock={clock}
                       target={kpiTarget}
                       actual={kpiActual}
-                      planned={kpiPlanned}
                     />
                   </div>
                   <p className="mt-3 text-xs text-ink-muted">{kpiMonthLabel}の積み上げ見込額</p>
@@ -495,7 +483,6 @@ export default async function DashboardPage({
                         clock={clock}
                         target={repTarget}
                         actual={sumOf(actualOf, rep)}
-                        planned={sumOf(plannedOf, rep)}
                       />
                       <input type="hidden" name={`rep_name_${i}`} value={rep} />
                       {SERVICE_KEYS.map((s) => (
