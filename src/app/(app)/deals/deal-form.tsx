@@ -6,6 +6,7 @@ import { Input, Select } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { DEAL_STAGES, SERVICES } from "@/lib/status";
 import { ServiceAmountFields } from "./service-amount-fields";
+import { TrialDateFields } from "./trial-date-fields";
 
 type DealDefaults = {
   id?: string;
@@ -149,26 +150,7 @@ export function DealForm({
           </FieldHint>
         </Field>
       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field>
-          <Label htmlFor="deal-trial-start">トライアル開始</Label>
-          <Input
-            id="deal-trial-start"
-            name="trial_start"
-            type="date"
-            defaultValue={deal?.trial_start ?? ""}
-          />
-        </Field>
-        <Field>
-          <Label htmlFor="deal-trial-end">トライアル終了</Label>
-          <Input
-            id="deal-trial-end"
-            name="trial_end"
-            type="date"
-            defaultValue={deal?.trial_end ?? ""}
-          />
-        </Field>
-      </div>
+      <TrialDateFields trialStart={deal?.trial_start} trialEnd={deal?.trial_end} />
       <div className="grid grid-cols-2 gap-4">
         <Field>
           <Label htmlFor="deal-competitor">競合</Label>

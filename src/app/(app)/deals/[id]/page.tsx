@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { PageHeader } from "@/components/ui/page-header";
+import { todayJST } from "@/lib/dates";
 import { formatDate } from "@/lib/format";
 import { CONTRACT_STATUSES, DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -20,9 +21,9 @@ export default async function DealDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ log?: string }>;
+  searchParams: Promise<{ log?: string; start_trial?: string }>;
 }) {
-  const [{ id }, { log }] = await Promise.all([params, searchParams]);
+  const [{ id }, { log, start_trial }] = await Promise.all([params, searchParams]);
   const db = createAdminClient();
   const [dealRes, customersRes, historyRes] = await Promise.all([
     db.from("deals").select("*, customers(id, name)").eq("id", id).single(),
@@ -35,6 +36,8 @@ export default async function DealDetailPage({
   ]);
   const deal = dealRes.data;
   if (!deal) notFound();
+  // ダッシュボードの「トライアル開始」から: ステージをトライアル中・開始日を今日にしてフォームを開く
+  const startingTrial = start_trial === "1" && deal.stage !== "won";
 
   // この商談の契約。取込や顧客画面から作った契約は商談IDを持たないので、同じ顧客・サービスでも探す
   const { data: contractRows } = await db
@@ -140,15 +143,24 @@ export default async function DealDetailPage({
         </Card>
       )}
 
-      <Card>
+      <Card id="edit">
         <CardHeader>
           <CardTitle>商談を編集</CardTitle>
+          {startingTrial && (
+            <p className="text-xs text-ink-muted">
+              トライアル中にします。終了日を入れて保存してください
+            </p>
+          )}
         </CardHeader>
         <CardBody>
           <DealForm
             action={updateDeal}
             customers={customersRes.data ?? []}
-            deal={deal}
+            deal={
+              startingTrial
+                ? { ...deal, stage: "trial", trial_start: deal.trial_start ?? todayJST() }
+                : deal
+            }
             submitLabel="保存する"
           />
         </CardBody>

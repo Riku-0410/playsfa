@@ -21,12 +21,20 @@ function plannedMonth(formData: FormData, stage: Stage): string | null {
 
 function dealValues(formData: FormData) {
   const stage = requiredStr(formData, "stage") as Stage;
+  const trialStart = str(formData, "trial_start");
+  const trialEnd = str(formData, "trial_end");
+  if (stage === "trial" && (!trialStart || !trialEnd)) {
+    throw new Error("トライアル中の商談はトライアル開始・終了が必須です");
+  }
+  if (trialStart && trialEnd && trialEnd < trialStart) {
+    throw new Error("トライアル終了は開始より後にしてください");
+  }
   return {
     customer_id: requiredStr(formData, "customer_id"),
     stage,
     trial_planned_month: plannedMonth(formData, stage),
-    trial_start: str(formData, "trial_start"),
-    trial_end: str(formData, "trial_end"),
+    trial_start: trialStart,
+    trial_end: trialEnd,
     competitor: str(formData, "competitor"),
     expected_billing_start: str(formData, "expected_billing_start"),
     lost_reason: str(formData, "lost_reason"),
@@ -105,21 +113,6 @@ export async function updateDeal(formData: FormData) {
   revalidatePath(`/deals/${id}`);
   // 保存後は必ず活動ログ記入モーダルを開く(スキップ可)
   redirect(`/deals/${id}?log=1`);
-}
-
-/** 見込み一覧から: トライアル予定 → トライアル中(開始日はDBトリガーで今日) */
-export async function startTrial(formData: FormData) {
-  const db = createAdminClient();
-  const id = requiredStr(formData, "id");
-  const { error } = await db
-    .from("deals")
-    .update({ stage: "trial" })
-    .eq("id", id)
-    .eq("stage", "trial_planned");
-  if (error) throw error;
-  revalidatePath("/deals");
-  revalidatePath(`/deals/${id}`);
-  revalidatePath("/");
 }
 
 /** 商談の作成/保存後モーダルからの活動ログ記録。記録後はモーダルを閉じて商談詳細へ */

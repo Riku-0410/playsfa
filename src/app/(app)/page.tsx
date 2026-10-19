@@ -18,7 +18,6 @@ import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { currentPeriod, kpiSummary } from "@/lib/kpi";
 import { createMissingInvoice, endContract } from "./contracts/actions";
-import { startTrial } from "./deals/actions";
 import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
 
@@ -616,15 +615,9 @@ export default async function DashboardPage({
                       </TD>
                       <TD>
                         <div className="flex gap-1.5">
-                          <ConfirmForm
-                            action={startTrial}
-                            message={`${r.customers?.name} のトライアルを今日から開始にします。よろしいですか？`}
-                          >
-                            <input type="hidden" name="id" value={r.id} />
-                            <Button size="sm" variant="outline" type="submit">
-                              トライアル開始
-                            </Button>
-                          </ConfirmForm>
+                          <Link href={`/deals/${r.id}?start_trial=1#edit`}>
+                            <Button size="sm" variant="outline">トライアル開始</Button>
+                          </Link>
                           <Link href={`/deals/${r.id}`}>
                             <Button size="sm" variant="ghost">編集</Button>
                           </Link>
