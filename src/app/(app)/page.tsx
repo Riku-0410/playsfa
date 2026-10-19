@@ -177,7 +177,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi, dueThisMonth] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi, dueThisMonth, noTrialEndRes] =
     await Promise.all([
       db
         .from("invoices")
@@ -250,6 +250,13 @@ export default async function DashboardPage({
         .gte("due_date", today)
         .lte("due_date", monthEnd)
         .order("due_date"),
+      // トライアル中なのに終了日がない商談(終了間近に出せず、追いかけ漏れになる)
+      db
+        .from("deals")
+        .select("id, service, trial_start, customers(name, owner_name)")
+        .eq("stage", "trial")
+        .is("trial_end", null)
+        .order("trial_start", { ascending: false, nullsFirst: false }),
     ]);
   const { dealsWithoutContract, contractGaps } = gaps;
   const gapCount =
@@ -281,6 +288,7 @@ export default async function DashboardPage({
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const unsentRows = upcoming.data ?? [];
   const trialRows = trials.data ?? [];
+  const noTrialEndRows = noTrialEndRes.data ?? [];
 
   // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
   const targetOf = new Map<string, number>();
@@ -697,6 +705,62 @@ export default async function DashboardPage({
           </CardBody>
         )}
       </Card>
+
+      {noTrialEndRows.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle className="text-critical-deep">
+                トライアル終了日が未入力 {noTrialEndRows.length}件
+              </CardTitle>
+              <p className="mt-1 text-xs text-ink-muted">
+                トライアル中なのに終了日がない商談(開始日が新しい順)。入れないと「トライアル終了間近」に出ません
+              </p>
+            </div>
+            <Link href="/deals?no_trial_end=1">
+              <Button variant="outline" size="sm">全{noTrialEndRows.length}件を見る →</Button>
+            </Link>
+          </CardHeader>
+          <CardBody className="px-2 pt-2">
+            <Table>
+              <thead>
+                <tr>
+                  <TH>顧客</TH>
+                  <TH>担当</TH>
+                  <TH>サービス</TH>
+                  <TH>トライアル開始</TH>
+                  <TH>アクション</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {noTrialEndRows.slice(0, 10).map((r) => (
+                  <TR key={r.id}>
+                    <TD className="font-semibold">
+                      <Link href={`/deals/${r.id}#edit`} className="hover:underline">
+                        {r.customers?.name}
+                      </Link>
+                    </TD>
+                    <TD className="text-ink-secondary">
+                      {r.customers?.owner_name ?? "—"}
+                    </TD>
+                    <TD>
+                      <Badge variant={SERVICES[r.service].badge} dot>
+                        {SERVICES[r.service].label}
+                      </Badge>
+                    </TD>
+                    <TD className="text-ink-secondary">{r.trial_start ?? "—"}</TD>
+                    <TD>
+                      <Link href={`/deals/${r.id}#edit`}>
+                        <Button size="sm" variant="outline">終了日を入れる</Button>
+                      </Link>
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+          </CardBody>
+        </Card>
+      )}
 
       {unsentRows.length > 0 && (
         <Card>

@@ -36,9 +36,12 @@ export default async function DealsPage({
     page?: string;
     sort?: string;
     dir?: string;
+    /** 1 ならトライアル中で終了日が未入力の商談だけ(ダッシュボードから) */
+    no_trial_end?: string;
   }>;
 }) {
-  const { stage, service, q: rawQ, ...raw } = await searchParams;
+  const { stage, service, q: rawQ, no_trial_end, ...raw } = await searchParams;
+  const noTrialEnd = no_trial_end === "1" ? "1" : undefined;
   const activeStage = stage && stage in DEAL_STAGES ? stage : undefined;
   const activeService = service && service in SERVICES ? service : undefined;
   const q = searchQuery(rawQ);
@@ -64,6 +67,7 @@ export default async function DealsPage({
     query = query.eq("service", activeService as keyof typeof SERVICES);
   }
   if (q) query = query.ilike("customers.name", `%${q}%`);
+  if (noTrialEnd) query = query.eq("stage", "trial").is("trial_end", null);
   const { data: deals, count } = await query;
   const total = count ?? 0;
 
@@ -73,10 +77,16 @@ export default async function DealsPage({
     q: q ?? undefined,
     sort: raw.sort,
     dir: raw.dir,
+    no_trial_end: noTrialEnd,
   };
   const sortProps = {
     basePath: "/deals",
-    params: { stage: activeStage, service: activeService, q: q ?? undefined },
+    params: {
+      stage: activeStage,
+      service: activeService,
+      q: q ?? undefined,
+      no_trial_end: noTrialEnd,
+    },
     sort: sortKey,
     dir,
   };
@@ -85,13 +95,27 @@ export default async function DealsPage({
     <div className="mx-auto max-w-6xl space-y-6">
       <PageHeader
         title="商談"
-        description={`${total}件`}
+        description={noTrialEnd ? `トライアル終了日が未入力 ${total}件` : `${total}件`}
         actions={
           <Link href="/deals/new">
             <Button>商談を追加 →</Button>
           </Link>
         }
       />
+
+      {noTrialEnd && (
+        <div className="flex items-center justify-between gap-4 rounded-inner bg-critical-soft px-4 py-3 text-sm text-critical-deep">
+          <span className="font-medium">
+            トライアル中で終了日が未入力の商談だけを表示しています
+          </span>
+          <Link
+            href={listHref("/deals", { service: activeService, q: q ?? undefined })}
+            className="font-semibold underline"
+          >
+            絞り込みを解除
+          </Link>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap gap-2">
