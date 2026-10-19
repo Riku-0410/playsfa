@@ -10,7 +10,7 @@ import { Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate } from "@/lib/billing";
 import { billingStartBlocker, successorOf } from "@/lib/contracts";
-import { formatJPY } from "@/lib/format";
+import { formatJPY, formatPerBilling } from "@/lib/format";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { changeBillingTerms, deleteContract, updateContract } from "../../actions";
@@ -69,7 +69,9 @@ export default async function EditContractPage({
       <CardInset className="flex flex-wrap items-center gap-x-6 gap-y-1 p-4 text-sm">
         <span>{BILLING_CYCLES[contract.billing_cycle]}</span>
         <span className="font-semibold">
-          {formatJPY(contract.amount_per_billing)}/回(税抜)
+          {contract.amount_per_billing === 0
+            ? "無償(請求書なし)"
+            : `${formatJPY(contract.amount_per_billing)}/回(税抜)`}
         </span>
         <span>
           契約期間 {contract.billing_start_date} 〜{" "}
@@ -159,7 +161,7 @@ export default async function EditContractPage({
           {startBlocker ? (
             <p className="text-sm text-ink-secondary">
               {BILLING_CYCLES[contract.billing_cycle]}{" "}
-              {formatJPY(contract.amount_per_billing)}/回。{startBlocker}
+              {formatPerBilling(contract.amount_per_billing)}。{startBlocker}
             </p>
           ) : (
             <ConfirmForm

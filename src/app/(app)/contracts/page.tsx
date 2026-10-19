@@ -195,7 +195,11 @@ export default async function ContractsPage({
                       {BILLING_CYCLES[c.billing_cycle]}
                     </TD>
                     <TD numeric className="font-semibold">
-                      {formatJPY(c.amount_per_billing)}
+                      {c.amount_per_billing === 0 ? (
+                        <Badge variant="neutral">無償</Badge>
+                      ) : (
+                        formatJPY(c.amount_per_billing)
+                      )}
                     </TD>
                     <TD className="text-ink-secondary">{c.agreement_date}</TD>
                     <TD className="text-ink-secondary">

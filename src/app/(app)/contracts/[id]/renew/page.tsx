@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { contractEndDate, nextTermStart } from "@/lib/billing";
 import { successorOf } from "@/lib/contracts";
 import { todayJST } from "@/lib/dates";
-import { formatJPY } from "@/lib/format";
+import { formatJPY, formatPerBilling } from "@/lib/format";
 import { BILLING_CYCLES, INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { renewContract } from "../../actions";
@@ -191,7 +191,7 @@ export default async function RenewContractPage({
                   />
                   <FieldHint>
                     現在 {BILLING_CYCLES[contract.billing_cycle]}{" "}
-                    {formatJPY(contract.amount_per_billing)}/回
+                    {formatPerBilling(contract.amount_per_billing)}。0円なら無償(請求書なし)
                   </FieldHint>
                 </Field>
               </div>

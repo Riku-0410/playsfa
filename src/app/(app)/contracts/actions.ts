@@ -50,13 +50,14 @@ function parseMemo(formData: FormData): ContractMemo | null {
 export async function createContract(formData: FormData) {
   const db = createAdminClient();
   const amount = num(formData, "amount_per_billing");
-  if (!amount || amount <= 0) throw new Error("請求額が不正です");
+  if (amount === null || amount < 0) throw new Error("請求額が不正です");
 
   const customerId = requiredStr(formData, "customer_id");
   const dealId = str(formData, "deal_id");
   let contractId: string;
+  let invoiceCount: number;
   try {
-    ({ contractId } = await createContractWithInvoices(db, {
+    ({ contractId, invoiceCount } = await createContractWithInvoices(db, {
       customer_id: customerId,
       deal_id: dealId,
       service: requiredStr(formData, "service") as NewContract["service"],
@@ -84,7 +85,12 @@ export async function createContract(formData: FormData) {
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/");
-  redirect(`/invoices?contract=${contractId}`);
+  redirect(landingOf(contractId, invoiceCount));
+}
+
+/** 保存後の行き先。請求書があればその一覧、無償で請求書がなければ契約の編集画面 */
+function landingOf(contractId: string, invoiceCount: number): string {
+  return invoiceCount > 0 ? `/invoices?contract=${contractId}` : `/contracts/${contractId}/edit`;
 }
 
 /**
@@ -188,8 +194,8 @@ export async function renewContract(formData: FormData) {
   const db = createAdminClient();
   const id = requiredStr(formData, "id");
   const amount = num(formData, "amount_per_billing");
-  if (!amount || amount <= 0) throw new Error("請求額が不正です");
-  const { contractId } = await renewContractRecord(db, {
+  if (amount === null || amount < 0) throw new Error("請求額が不正です");
+  const { contractId, invoiceCount } = await renewContractRecord(db, {
     id,
     billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
     amount_per_billing: amount,
@@ -202,23 +208,28 @@ export async function renewContract(formData: FormData) {
   revalidatePath("/invoices");
   revalidatePath("/reports");
   revalidatePath("/");
-  redirect(`/invoices?contract=${contractId}`);
+  redirect(landingOf(contractId, invoiceCount));
 }
 
 /** 支払い方(サイクル・1回あたりの金額)を変えて、未送付の請求書を作り直す */
 export async function changeBillingTerms(formData: FormData) {
   const amount = num(formData, "amount_per_billing");
-  if (!amount || amount <= 0) throw new Error("請求額が不正です");
+  if (amount === null || amount < 0) throw new Error("請求額が不正です");
   const id = requiredStr(formData, "id");
-  await changeBillingTermsRecord(createAdminClient(), id, {
+  const db = createAdminClient();
+  await changeBillingTermsRecord(db, id, {
     billing_cycle: requiredStr(formData, "billing_cycle") as BillingCycle,
     amount_per_billing: amount,
   });
+  const { count } = await db
+    .from("invoice_items")
+    .select("id", { count: "exact", head: true })
+    .eq("contract_id", id);
   revalidatePath("/contracts");
   revalidatePath("/invoices");
   revalidatePath("/reports");
   revalidatePath("/");
-  redirect(`/invoices?contract=${id}`);
+  redirect(landingOf(id, count ?? 0));
 }
 
 /** 更新されなかった契約を満了にする。未送付の請求書は残っていない前提(残っていれば無効化) */

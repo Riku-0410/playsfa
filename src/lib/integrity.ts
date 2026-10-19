@@ -9,7 +9,7 @@ type Service = Database["public"]["Enums"]["service_tag"];
  * 商談 → 契約 → 請求の登録漏れ検出。
  * - 成約なのに契約がない商談: 商談IDで紐づく契約も、同じ顧客・サービスの契約もない
  *   (取込や顧客画面から作った契約は deal_id を持たないので、顧客×サービスでも突き合わせる)
- * - 請求書がない契約期間: 課金待ち/課金中の契約の各請求期間について、
+ * - 請求書がない契約期間: 課金待ち/課金中の契約(無償を除く)の各請求期間について、
  *   その契約の明細を持つ有効な請求書の期間(period_start〜period_end)がカバーしていない
  *   (手入力の明細は period_start を持たないことがあるので、請求書側の期間で判定する)
  */
@@ -72,7 +72,7 @@ export async function findPipelineGaps(db: Db): Promise<{
     db
       .from("contracts")
       .select(
-        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, previous_contract_id, customers(name, owner_name)",
+        "id, deal_id, customer_id, service, status, billing_cycle, billing_start_date, term_months, amount_per_billing, previous_contract_id, customers(name, owner_name)",
       ),
     db
       .from("invoice_items")
@@ -133,6 +133,8 @@ export async function findPipelineGaps(db: Db): Promise<{
 
   const contractGaps: ContractGap[] = [];
   for (const c of live) {
+    // 無償の契約は請求書を作らない(費用分の請求書があっても残りの回は空でよい)
+    if (c.amount_per_billing === 0) continue;
     const ranges = coverage.get(c.id) ?? [];
     const missingPeriods = billingPeriodStarts(
       c.billing_start_date,

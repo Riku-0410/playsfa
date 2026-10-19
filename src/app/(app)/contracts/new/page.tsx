@@ -140,7 +140,7 @@ export default async function NewContractPage({
                   placeholder="480,000"
                   defaultValue={deal?.amount_expected ?? ""}
                 />
-                <FieldHint>年払いなら年額、半期払いなら半年分。ライセンス数が未確定なら仮の金額でOK(請求書を送る前に直せます)</FieldHint>
+                <FieldHint>年払いなら年額、半期払いなら半年分。ライセンス数が未確定なら仮の金額でOK(請求書を送る前に直せます)。無償で提供するなら0(請求書は作りません)</FieldHint>
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-4">

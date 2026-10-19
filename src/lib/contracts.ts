@@ -37,7 +37,8 @@ export type ContractMemo = { content: string; author_name: string };
 
 /** 契約条件の1行(活動ログ用) */
 function termsLine(cycle: BillingCycle, amount: number, start: string): string {
-  return `${BILLING_CYCLES[cycle]} ${amount.toLocaleString()}円/回(税抜)・${start}〜`;
+  const price = amount === 0 ? "無償" : `${amount.toLocaleString()}円/回(税抜)`;
+  return `${BILLING_CYCLES[cycle]} ${price}・${start}〜`;
 }
 
 /** 同じ顧客・サービスで期間の重なる課金待ち/課金中の契約がすでにある */
@@ -50,6 +51,7 @@ export class DuplicateContractError extends Error {
 /**
  * 契約を登録し、契約期間分の請求書(明細付き)を未送付で先行生成する。
  * 初期費用・年間費用は初回請求に明細行として載る。
+ * 無償(請求額0円)の契約も登録できる。0円になる回の請求書は作らない(費用があればその回だけ作る)。
  * 途中で失敗したら契約ごと巻き戻す。
  * - 同じ顧客・サービスで期間の重なる契約があれば DuplicateContractError(継続なら「更新」を使う)
  * - 商談の指定がなければ、同じ顧客・サービスの未契約の商談(失注以外)を自動で紐づける(更新では紐づけない)
@@ -131,15 +133,21 @@ export async function createContractWithInvoices(
     }
   }
 
-  const drafts = computeInvoiceSchedule({
-    serviceLabel: SERVICES[input.service].label,
-    billingCycle: input.billing_cycle,
-    amountPerBilling: input.amount_per_billing,
-    taxRate: input.tax_rate,
-    billingStartDate: input.billing_start_date,
-    termMonths,
-    fees,
-  });
+  const drafts = billableDrafts(
+    computeInvoiceSchedule({
+      serviceLabel: SERVICES[input.service].label,
+      billingCycle: input.billing_cycle,
+      amountPerBilling: input.amount_per_billing,
+      taxRate: input.tax_rate,
+      billingStartDate: input.billing_start_date,
+      termMonths,
+      fees,
+    }),
+  );
+  if (drafts.length === 0) {
+    await logContractMemo(db, input, dealId);
+    return { contractId: contract.id, invoiceCount: 0 };
+  }
 
   const { data: inserted, error: invoiceError } = await db
     .from("invoices")
@@ -182,17 +190,29 @@ export async function createContractWithInvoices(
       .eq("id", dealId);
   }
 
-  if (input.memo) {
-    await db.from("activities").insert({
-      customer_id: input.customer_id,
-      deal_id: dealId,
-      type: "memo",
-      content: `${SERVICES[input.service].label}の契約を登録(${termsLine(input.billing_cycle, input.amount_per_billing, input.billing_start_date)})\n${input.memo.content}`,
-      author_name: input.memo.author_name,
-    });
-  }
+  await logContractMemo(db, input, dealId);
 
   return { contractId: contract.id, invoiceCount: drafts.length };
+}
+
+/** 0円の回は請求書を作らない(無償の契約) */
+function billableDrafts<T extends { subtotal: number }>(drafts: T[]): T[] {
+  return drafts.filter((d) => d.subtotal > 0);
+}
+
+async function logContractMemo(
+  db: SupabaseClient<Database>,
+  input: NewContract,
+  dealId: string | null,
+) {
+  if (!input.memo) return;
+  await db.from("activities").insert({
+    customer_id: input.customer_id,
+    deal_id: dealId,
+    type: "memo",
+    content: `${SERVICES[input.service].label}の契約を登録(${termsLine(input.billing_cycle, input.amount_per_billing, input.billing_start_date)})\n${input.memo.content}`,
+    author_name: input.memo.author_name,
+  });
 }
 
 export type RenewContractInput = {
@@ -228,7 +248,7 @@ export async function successorOf(
 export async function renewContract(
   db: SupabaseClient<Database>,
   input: RenewContractInput,
-): Promise<{ contractId: string }> {
+): Promise<{ contractId: string; invoiceCount: number }> {
   const { data: c, error } = await db
     .from("contracts")
     .select("*")
@@ -247,7 +267,7 @@ export async function renewContract(
     throw new Error(`課金開始日は今の契約の終了日(${oldEnd})より後にしてください`);
   }
 
-  const { contractId } = await createContractWithInvoices(db, {
+  const { contractId, invoiceCount } = await createContractWithInvoices(db, {
     customer_id: c.customer_id,
     previous_contract_id: c.id,
     service: c.service,
@@ -279,7 +299,7 @@ export async function renewContract(
     occurred_at: input.agreement_date,
   });
 
-  return { contractId };
+  return { contractId, invoiceCount };
 }
 
 /**
@@ -489,7 +509,7 @@ export async function changeBillingTerms(
   db: SupabaseClient<Database>,
   contractId: string,
   terms: { billing_cycle: BillingCycle; amount_per_billing: number },
-) {
+): Promise<void> {
   const { data: c, error } = await db
     .from("contracts")
     .select("*, contract_fees(description, amount)")
@@ -506,14 +526,18 @@ export async function changeBillingTerms(
   if (blocker) throw new Error(blocker);
 
   const rows = await contractInvoiceRows(db, contractId);
-  const oldStarts = computeInvoiceSchedule({
-    serviceLabel: SERVICES[c.service].label,
-    billingCycle: c.billing_cycle,
-    amountPerBilling: c.amount_per_billing,
-    taxRate: Number(c.tax_rate),
-    billingStartDate: c.billing_start_date,
-    termMonths: c.term_months,
-  }).map((d) => d.period_start);
+  const fees = c.contract_fees ?? [];
+  const oldStarts = billableDrafts(
+    computeInvoiceSchedule({
+      serviceLabel: SERVICES[c.service].label,
+      billingCycle: c.billing_cycle,
+      amountPerBilling: c.amount_per_billing,
+      taxRate: Number(c.tax_rate),
+      billingStartDate: c.billing_start_date,
+      termMonths: c.term_months,
+      fees,
+    }),
+  ).map((d) => d.period_start);
   const existing = [...new Map(rows.map((r) => [r.invoice_id, r.invoices.period_start]))]
     .map(([id, periodStart]) => ({ id, periodStart }))
     .sort((a, b) => a.periodStart.localeCompare(b.periodStart));
@@ -526,15 +550,17 @@ export async function changeBillingTerms(
     );
   }
 
-  const drafts = computeInvoiceSchedule({
-    serviceLabel: SERVICES[c.service].label,
-    billingCycle: terms.billing_cycle,
-    amountPerBilling: terms.amount_per_billing,
-    taxRate: Number(c.tax_rate),
-    billingStartDate: c.billing_start_date,
-    termMonths: c.term_months,
-    fees: c.contract_fees ?? [],
-  });
+  const drafts = billableDrafts(
+    computeInvoiceSchedule({
+      serviceLabel: SERVICES[c.service].label,
+      billingCycle: terms.billing_cycle,
+      amountPerBilling: terms.amount_per_billing,
+      taxRate: Number(c.tax_rate),
+      billingStartDate: c.billing_start_date,
+      termMonths: c.term_months,
+      fees,
+    }),
+  );
 
   for (const [k, { items, ...d }] of drafts.entries()) {
     let invoiceId = existing[k]?.id;

@@ -42,3 +42,8 @@ export function formatCountRange(n: number): string {
   if (Math.abs(n - r) < 0.15) return `${r}件`;
   return `${Math.floor(n)}〜${Math.ceil(n)}件`;
 }
+
+/** 契約の1回あたりの請求額。0円は無償の契約 */
+export function formatPerBilling(amount: number): string {
+  return amount === 0 ? "無償" : `${formatJPY(amount)}/回`;
+}

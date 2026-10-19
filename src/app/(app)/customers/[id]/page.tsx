@@ -185,9 +185,13 @@ export default async function CustomerDetailPage({
                       </Badge>
                       <span className="text-sm">
                         {BILLING_CYCLES[c.billing_cycle]}
-                        <span className="mx-1 font-semibold tabular-nums">
-                          {formatJPY(c.amount_per_billing)}
-                        </span>
+                        {c.amount_per_billing === 0 ? (
+                          <Badge variant="neutral" className="mx-1">無償</Badge>
+                        ) : (
+                          <span className="mx-1 font-semibold tabular-nums">
+                            {formatJPY(c.amount_per_billing)}
+                          </span>
+                        )}
                       </span>
                     </span>
                     <span className="flex items-center gap-3 text-xs text-ink-muted">
