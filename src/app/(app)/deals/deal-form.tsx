@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
-import { DEAL_STAGES, SERVICES } from "@/lib/status";
+import { DEAL_STAGES, RETIRED_DEAL_STAGES, SERVICES } from "@/lib/status";
 import { ServiceAmountFields } from "./service-amount-fields";
 import { TrialDateFields } from "./trial-date-fields";
 
@@ -48,7 +48,7 @@ function StageField({ stage }: { stage?: string }) {
         defaultValue={stage ?? "lead"}
       >
         {Object.entries(DEAL_STAGES)
-          .filter(([k]) => k !== "won")
+          .filter(([k]) => k !== "won" && !RETIRED_DEAL_STAGES.includes(k))
           .map(([k, v]) => (
             <option key={k} value={k}>{v.label}</option>
           ))}

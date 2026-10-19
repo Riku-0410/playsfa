@@ -15,10 +15,14 @@ export const DEAL_STAGES = {
   /** トライアルに入れそう。予定月(deals.trial_planned_month)の見込みに数える */
   trial_planned: { label: "トライアル予定", badge: "info" },
   trial: { label: "トライアル中", badge: "accent" },
+  /** 廃止(トライアル中に統合)。商談には使えない(DB制約)。ステージ履歴の表示用に残す */
   negotiation: { label: "商談中", badge: "warn" },
   won: { label: "成約", badge: "good" },
   lost: { label: "失注", badge: "critical" },
 } satisfies Record<string, StatusMeta>;
+
+/** 選択肢・絞り込みに出さないステージ */
+export const RETIRED_DEAL_STAGES: readonly string[] = ["negotiation"];
 
 export const CONTRACT_STATUSES = {
   pending: { label: "課金待ち", badge: "warn" },

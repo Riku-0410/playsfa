@@ -11,7 +11,7 @@ import { Table, TD, TH, TR } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
 import { formatDateShort, formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
-import { DEAL_STAGES, SERVICES } from "@/lib/status";
+import { DEAL_STAGES, RETIRED_DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -135,26 +135,28 @@ export default async function DealsPage({
           >
             すべて
           </Link>
-          {Object.entries(DEAL_STAGES).map(([k, v]) => (
-            <Link
-              key={k}
-              href={listHref("/deals", {
-                stage: k,
-                service: activeService,
-                q: q ?? undefined,
-                sort: raw.sort,
-                dir: raw.dir,
-              })}
-              className={cn(
-                "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
-                activeStage === k
-                  ? "bg-night text-night-ink"
-                  : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
-              )}
-            >
-              {v.label}
-            </Link>
-          ))}
+          {Object.entries(DEAL_STAGES)
+            .filter(([k]) => !RETIRED_DEAL_STAGES.includes(k))
+            .map(([k, v]) => (
+              <Link
+                key={k}
+                href={listHref("/deals", {
+                  stage: k,
+                  service: activeService,
+                  q: q ?? undefined,
+                  sort: raw.sort,
+                  dir: raw.dir,
+                })}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full px-4 text-sm font-medium transition-colors",
+                  activeStage === k
+                    ? "bg-night text-night-ink"
+                    : "bg-surface text-ink-secondary border border-line hover:bg-sunken",
+                )}
+              >
+                {v.label}
+              </Link>
+            ))}
         </div>
         <div className="flex flex-wrap gap-2">
           <Link

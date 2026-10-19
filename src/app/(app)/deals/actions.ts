@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { todayJST } from "@/lib/dates";
 import { num, requiredStr, str } from "@/lib/form";
 import type { Database } from "@/lib/database.types";
-import { SERVICES } from "@/lib/status";
+import { RETIRED_DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { addActivity } from "../customers/actions";
 
@@ -21,6 +21,9 @@ function plannedMonth(formData: FormData, stage: Stage): string | null {
 
 function dealValues(formData: FormData) {
   const stage = requiredStr(formData, "stage") as Stage;
+  if (RETIRED_DEAL_STAGES.includes(stage)) {
+    throw new Error("このステージは廃止されました。トライアル中を選んでください");
+  }
   const trialStart = str(formData, "trial_start");
   const trialEnd = str(formData, "trial_end");
   if (stage === "trial" && (!trialStart || !trialEnd)) {
