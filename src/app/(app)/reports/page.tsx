@@ -41,13 +41,82 @@ function addMonth(key: string, n: number): string {
   return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
 }
 
+/**
+ * 成長シナリオの4系列。実請求書は入金予測と同じ色、見込みは確度順に薄く、
+ * まだ存在しない新規獲得分だけ別色相(series-2)で「仮定の上乗せ」と分かるようにする
+ */
+const GROWTH_SERIES = [
+  { key: "paid", label: "入金済み", color: "var(--color-ink-muted)" },
+  { key: "invoiced", label: "請求書あり", color: "var(--color-accent)" },
+  { key: "renewal", label: "既存契約の更新見込み", color: "var(--color-accent-300)" },
+  { key: "new", label: "新規獲得見込み", color: "var(--color-series-2)" },
+];
+
+/** 成長シナリオの前提: 契約更新ごとの継続率と、新規獲得ペースを測る直近の月数 */
+const RETENTION = 0.9;
+const PACE_MONTHS = 6;
+
 function sum(values: number[]): number {
   return values.reduce((a, b) => a + b, 0);
 }
 
+type BillingContract = {
+  billing_cycle: string;
+  amount_per_billing: number;
+  billing_start_date: string;
+  contract_fees: { amount: number; recurring: boolean }[] | null;
+};
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * 契約が更新され続けた場合の請求回を発行順に出す(期限月が until を超えたら終わり)。
+ * 利用料+契約年度初回の毎年費用。year は契約開始からの契約年度(0始まり)
+ */
+function* billingRuns(c: BillingContract, until: string) {
+  const period = c.billing_cycle === "annual" ? 12 : 6;
+  const recurringFees = sum(
+    (c.contract_fees ?? []).filter((f) => f.recurring).map((f) => f.amount),
+  );
+  const [y, m, d] = c.billing_start_date.split("-").map(Number);
+  for (let k = 0; ; k++) {
+    // 発行日は請求書生成(date-fnsのaddMonths)と同じ月末クランプで出し、既存請求書と突き合わせる
+    const anchor = new Date(y, m - 1 + k * period, 1);
+    const day = Math.min(
+      d,
+      new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate(),
+    );
+    const issue = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}-${pad2(day)}`;
+    // 支払期限 = 発行月の末日なので、期限の月 = 発行月
+    const dueKey = issue.slice(0, 7);
+    if (dueKey > until) return;
+    const yearStart = (k * period) % 12 === 0;
+    yield {
+      k,
+      issue,
+      dueKey,
+      year: Math.floor((k * period) / 12),
+      subtotal: c.amount_per_billing + (yearStart ? recurringFees : 0),
+    };
+  }
+}
+
+const withTax = (subtotal: number, taxRate: number) =>
+  subtotal + Math.floor((subtotal * taxRate) / 100);
+
+/** "yyyy-MM" 同士の月差(b - a) */
+function monthDiff(a: string, b: string): number {
+  const [ay, am] = a.split("-").map(Number);
+  const [by, bm] = b.split("-").map(Number);
+  return (by - ay) * 12 + (bm - am);
+}
+
 export default async function ReportsPage() {
   const db = createAdminClient();
-  const [trialRes, wonRes, invRes, contractRes, itemRes] = await Promise.all([
+  const today = todayJST();
+  const thisMonth = today.slice(0, 7);
+  const paceFrom = addMonth(thisMonth, -PACE_MONTHS);
+  const [trialRes, wonRes, invRes, contractRes, itemRes, newRes] = await Promise.all([
     db.from("deals").select("trial_start, service").not("trial_start", "is", null),
     db
       .from("deals")
@@ -73,6 +142,15 @@ export default async function ReportsPage() {
       .not("contract_id", "is", null)
       .not("period_start", "is", null)
       .neq("invoices.status", "void"),
+    // 新規獲得ペース = 直近の完了月に締結した新規(更新でない)契約。解約・終了済みも獲得実績として数える
+    db
+      .from("contracts")
+      .select(
+        "agreement_date, billing_cycle, amount_per_billing, tax_rate, billing_start_date, contract_fees(amount, recurring)",
+      )
+      .is("previous_contract_id", null)
+      .gte("agreement_date", `${paceFrom}-01`)
+      .lt("agreement_date", `${thisMonth}-01`),
   ]);
 
   // 月キー → 系列順の値
@@ -101,8 +179,6 @@ export default async function ReportsPage() {
   // 入金予測(解約0%想定) = 実請求書(入金済みも系列を分けて積む) + 全契約が更新され続ける前提の将来請求。
   // 請求書が既にある回はその金額を使い(入金済みは除外)、未生成の回だけ請求書生成と
   // 同じルール(利用料+契約年度初回の毎年費用、税切り捨て、期限=発行月の末日)で「予定」に足す
-  const today = todayJST();
-  const thisMonth = today.slice(0, 7);
   const projEnd = addMonth(thisMonth, 12);
   const unpaid = new Map<string, number[]>();
   const addUnpaid = (key: string, si: number, v: number) => {
@@ -124,28 +200,10 @@ export default async function ReportsPage() {
             : 2;
     addUnpaid(r.due_date.slice(0, 7), si, r.total);
   }
-  const pad2 = (n: number) => String(n).padStart(2, "0");
   for (const c of contractRes.data ?? []) {
-    const period = c.billing_cycle === "annual" ? 12 : 6;
-    const recurringFees = sum(
-      (c.contract_fees ?? []).filter((f) => f.recurring).map((f) => f.amount),
-    );
-    const [y, m, d] = c.billing_start_date.split("-").map(Number);
-    for (let k = 0; ; k++) {
-      // 発行日は請求書生成(date-fnsのaddMonths)と同じ月末クランプで出し、既存請求書と突き合わせる
-      const anchor = new Date(y, m - 1 + k * period, 1);
-      const day = Math.min(
-        d,
-        new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate(),
-      );
-      const issue = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}-${pad2(day)}`;
-      // 支払期限 = 発行月の末日なので、期限の月 = 発行月
-      const dueKey = `${anchor.getFullYear()}-${pad2(anchor.getMonth() + 1)}`;
-      if (dueKey > projEnd) break;
-      if (invoiced.has(`${c.id}:${issue}`) || dueKey < thisMonth) continue;
-      const subtotal =
-        c.amount_per_billing + ((k * period) % 12 === 0 ? recurringFees : 0);
-      addUnpaid(dueKey, 3, subtotal + Math.floor((subtotal * c.tax_rate) / 100));
+    for (const r of billingRuns(c, projEnd)) {
+      if (invoiced.has(`${c.id}:${r.issue}`) || r.dueKey < thisMonth) continue;
+      addUnpaid(r.dueKey, 3, withTax(r.subtotal, c.tax_rate));
     }
   }
   const unpaidFirst = [...unpaid.keys()].sort()[0] ?? thisMonth;
@@ -155,6 +213,62 @@ export default async function ReportsPage() {
     key: k,
     values: unpaid.get(k) ?? UNPAID_SERIES.map(() => 0),
   }));
+
+  // 成長シナリオ(継続率90%+新規獲得が今のペースで続く) = 今月〜再来年末の支払期限月ベース。
+  // 実請求書はそのまま(締結済みなので100%)、未請求の回は今の契約年度より先の年度ぶん
+  // RETENTION を掛ける。新規は直近 PACE_MONTHS ヶ月の締結契約を「毎月これの1/PACE_MONTHS が
+  // 新たに締結される」型として来月以降に複製し、締結→課金開始の間隔もそのまま保つ
+  const growthEnd = `${Number(thisMonth.slice(0, 4)) + 2}-12`;
+  const growth = new Map<string, number[]>();
+  const addGrowth = (key: string, si: number, v: number) => {
+    if (key < thisMonth || key > growthEnd) return;
+    const arr = growth.get(key) ?? GROWTH_SERIES.map(() => 0);
+    arr[si] += v;
+    growth.set(key, arr);
+  };
+  for (const r of invRes.data ?? []) {
+    addGrowth(r.due_date.slice(0, 7), r.status === "paid" ? 0 : 1, r.total);
+  }
+  for (const c of contractRes.data ?? []) {
+    const currentYear = Math.max(
+      0,
+      Math.floor(monthDiff(c.billing_start_date.slice(0, 7), thisMonth) / 12),
+    );
+    for (const r of billingRuns(c, growthEnd)) {
+      if (invoiced.has(`${c.id}:${r.issue}`) || r.dueKey < thisMonth) continue;
+      const survive = RETENTION ** Math.max(0, r.year - currentYear);
+      addGrowth(r.dueKey, 2, withTax(r.subtotal, c.tax_rate) * survive);
+    }
+  }
+  const paceContracts = newRes.data ?? [];
+  for (const t of paceContracts) {
+    const lag = Math.max(
+      0,
+      monthDiff(t.agreement_date.slice(0, 7), t.billing_start_date.slice(0, 7)),
+    );
+    const oneTimeFees = sum(
+      (t.contract_fees ?? []).filter((f) => !f.recurring).map((f) => f.amount),
+    );
+    for (let signed = addMonth(thisMonth, 1); signed <= growthEnd; signed = addMonth(signed, 1)) {
+      const start = `${addMonth(signed, lag)}-01`;
+      for (const r of billingRuns({ ...t, billing_start_date: start }, growthEnd)) {
+        const subtotal = r.subtotal + (r.k === 0 ? oneTimeFees : 0);
+        addGrowth(
+          r.dueKey,
+          3,
+          (withTax(subtotal, t.tax_rate) * RETENTION ** r.year) / PACE_MONTHS,
+        );
+      }
+    }
+  }
+  const growthMonths: MonthlyStackedDatum[] = [];
+  for (let k = thisMonth; k <= growthEnd; k = addMonth(k, 1)) {
+    growthMonths.push({
+      key: k,
+      values: (growth.get(k) ?? GROWTH_SERIES.map(() => 0)).map(Math.round),
+    });
+  }
+  const growthTotal = sum(growthMonths.map((m) => sum(m.values)));
 
   // 全チャート共通の月レンジ(比較しやすいよう縦に揃える)
   const allKeys = [...trials.keys(), ...won.keys(), ...billing.keys()].sort();
@@ -272,6 +386,32 @@ export default async function ReportsPage() {
             subtotals={[
               { label: "入金済み計", indices: [0] },
               { label: "未入金計", indices: [1, 2, 3] },
+            ]}
+          />
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>成長シナリオ(継続率90%・新規は今のペース)</CardTitle>
+          <p className="text-xs text-ink-muted">
+            契約更新のたびに90%が継続し、新規は直近{PACE_MONTHS}ヶ月の締結ペース(月平均
+            {(paceContracts.length / PACE_MONTHS).toFixed(1)}
+            件)で毎月獲得し続けた場合の入金額。支払期限月で集計・税込。
+            {Number(thisMonth.slice(0, 4))}年{Number(thisMonth.slice(5))}月〜
+            {growthEnd.slice(0, 4)}年末の合計{" "}
+            {formatJPYCompact(growthTotal)}
+          </p>
+        </CardHeader>
+        <CardBody>
+          <MonthlyStackedColumns
+            title="成長シナリオ(継続率90%・新規は今のペース)"
+            data={growthMonths}
+            series={GROWTH_SERIES}
+            money
+            subtotals={[
+              { label: "請求書ベース", indices: [0, 1] },
+              { label: "見込み", indices: [2, 3] },
             ]}
           />
         </CardBody>
