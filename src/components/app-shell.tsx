@@ -127,7 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <p className="mt-auto px-4 text-[10px] text-ink-muted">
-          playcut / baskestats / playone SFA
+          playcut / playcut(iPad) / baskestats / playone SFA
         </p>
       </aside>
       <div className="min-w-0 flex-1 px-8 py-8">{children}</div>

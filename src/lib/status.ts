@@ -7,6 +7,7 @@ export const SERVICES = {
   playcut: { label: "playcut", badge: "accent", seriesVar: "var(--color-series-1)" },
   baskestats: { label: "baskestats", badge: "info", seriesVar: "var(--color-series-2)" },
   playone: { label: "playone", badge: "neutral", seriesVar: "var(--color-series-3)" },
+  playcut_ipad: { label: "playcut(iPad)", badge: "dark", seriesVar: "var(--color-series-4)" },
 } satisfies Record<string, StatusMeta & { seriesVar: string }>;
 
 export const DEAL_STAGES = {

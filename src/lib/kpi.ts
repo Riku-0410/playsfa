@@ -15,7 +15,7 @@ export const KPI_PERIODS = [
     label: "2期目",
     start: "2026-07",
     months: 12,
-    monthly: { playcut: 10, baskestats: 20 },
+    monthly: { playcut: 10, baskestats: 20, playcut_ipad: 5 },
   },
 ] satisfies { label: string; start: string; months: number; monthly: Partial<Record<Service, number>> }[];
 
