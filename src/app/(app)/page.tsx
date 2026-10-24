@@ -157,6 +157,10 @@ export default async function DashboardPage({
   const kpiYM =
     rawMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(rawMonth) ? rawMonth : currentYM;
   const isCurrentMonth = kpiYM === currentYM;
+  // 翌月以降は目標を先に決めておくための表示(実績はまだないので達成率ではなく目標件数を出す)
+  const isFutureMonth = kpiYM > currentYM;
+  // 先の目標は12か月先まで
+  const lastTargetYM = addMonths(currentYM, 12);
   const { start: kpiStart, end: kpiEnd } = monthBoundsJST(kpiYM);
   const [ky, km] = kpiYM.split("-").map(Number);
   const kpiMonthLabel = isCurrentMonth ? "今月" : `${ky}年${km}月`;
@@ -358,7 +362,9 @@ export default async function DashboardPage({
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>{kpiMonthLabel}のトライアル目標達成率</CardTitle>
+            <CardTitle>
+              {kpiMonthLabel}のトライアル目標{isFutureMonth ? "" : "達成率"}
+            </CardTitle>
             <p className="mt-1 text-xs text-ink-muted">
               {ky}年{km}月・トライアル導入日ベース
             </p>
@@ -372,7 +378,7 @@ export default async function DashboardPage({
                 <Button variant="outline" size="sm">今月</Button>
               </Link>
             )}
-            {isCurrentMonth ? (
+            {kpiYM >= lastTargetYM ? (
               <Button variant="outline" size="sm" disabled aria-label="次の月">翌月 →</Button>
             ) : (
               <Link href={`/?month=${nextYM}`} aria-label="次の月">
@@ -386,7 +392,33 @@ export default async function DashboardPage({
             <input type="hidden" name="month" value={kpiStart} />
             <input type="hidden" name="return_month" value={kpiYM} />
             <div className="grid items-center gap-x-10 gap-y-6 lg:grid-cols-[13rem_1fr]">
-              {kpiPct !== null ? (
+              {isFutureMonth ? (
+                <div>
+                  <p
+                    className={
+                      kpiTarget > 0
+                        ? "text-5xl font-bold tracking-tight"
+                        : "text-5xl font-bold tracking-tight text-ink-muted"
+                    }
+                  >
+                    {kpiTarget > 0 ? kpiTarget : "—"}
+                    {kpiTarget > 0 && (
+                      <span className="text-2xl font-semibold text-ink-secondary">件</span>
+                    )}
+                  </p>
+                  <p className="mt-2 text-xs text-ink-muted">
+                    {kpiTarget > 0
+                      ? `${kpiMonthLabel}の目標(全社)`
+                      : "目標が未設定です。サービスごとの目標件数を入力して保存しておけます。"}
+                  </p>
+                  {kpiPlanned > 0 && (
+                    <p className="mt-2 text-xs text-ink-secondary">
+                      トライアル予定(見込み)
+                      <span className="ml-1 font-bold">{kpiPlanned}件</span>
+                    </p>
+                  )}
+                </div>
+              ) : kpiPct !== null ? (
                 <div>
                   <p className="text-5xl font-bold tracking-tight">
                     {kpiPct}
