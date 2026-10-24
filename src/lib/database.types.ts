@@ -548,6 +548,21 @@ export type Database = {
           },
         ]
       }
+      sales_reps: {
+        Row: {
+          created_at: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          name?: string
+        }
+        Relationships: []
+      }
       trial_targets: {
         Row: {
           month: string

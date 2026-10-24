@@ -2,6 +2,7 @@ import { SaveForm } from "@/components/save-form";
 import { Button } from "@/components/ui/button";
 import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { listReps } from "@/lib/reps";
 import { GENDER_CATEGORIES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { OwnerNameField } from "./owner-name-field";
@@ -31,19 +32,8 @@ export async function CustomerForm({
   customer?: CustomerDefaults;
   submitLabel: string;
 }) {
-  // 保存済みの弊社担当者名をチップ候補に出す
-  const db = createAdminClient();
-  const { data: owners } = await db
-    .from("customers")
-    .select("owner_name")
-    .not("owner_name", "is", null);
-  const ownerOptions = [
-    ...new Set(
-      (owners ?? [])
-        .map((r) => r.owner_name)
-        .filter((n): n is string => Boolean(n)),
-    ),
-  ].sort((a, b) => a.localeCompare(b, "ja"));
+  // 弊社担当者の候補をチップで出す
+  const ownerOptions = await listReps(createAdminClient());
 
   return (
     <SaveForm

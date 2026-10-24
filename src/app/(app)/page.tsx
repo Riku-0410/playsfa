@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
 import { currentPeriod, kpiSummary } from "@/lib/kpi";
+import { listReps } from "@/lib/reps";
 import { createMissingInvoice, endContract } from "./contracts/actions";
 import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
@@ -170,7 +171,7 @@ export default async function DashboardPage({
   const [ty, tm, td] = today.split("-").map(Number);
   const { end: nextMonthEnd } = monthBoundsJST(addMonths(currentYM, 1));
 
-  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, ownerRes, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi, dueThisMonth, noTrialEndRes] =
+  const [monthInvoices, unpaid, trials, activeContracts, monthTrials, targetRes, repNames, activeRows, gaps, upcoming, renewedRes, plannedRes, kpi, dueThisMonth, noTrialEndRes] =
     await Promise.all([
       db
         .from("invoices")
@@ -204,10 +205,7 @@ export default async function DashboardPage({
         .from("trial_targets")
         .select("service, owner_name, target_count")
         .eq("month", kpiStart),
-      db
-        .from("customers")
-        .select("owner_name")
-        .not("owner_name", "is", null),
+      listReps(db),
       // 契約終了日はDB列にないので課金中を全件引いてJSで絞る(件数は少ない)
       db
         .from("contracts")
@@ -333,13 +331,10 @@ export default async function DashboardPage({
   }
   // 目標のあるサービスだけで数える(目標と実績の範囲を揃える。未設定なら全サービス)
   const kpiPlanned = sumOf(plannedOf, "");
-  // 担当者一覧 = 顧客に設定済みの弊社担当者 ∪ 対象月の目標を持つ担当者
+  // 担当者一覧 = 担当者の候補(設定の一覧 ∪ 顧客に設定済み) ∪ 対象月の目標を持つ担当者
   const reps = [
     ...new Set(
-      [
-        ...(ownerRes.data ?? []).map((r) => r.owner_name),
-        ...(targetRes.data ?? []).map((r) => r.owner_name),
-      ].filter((n): n is string => Boolean(n)),
+      [...repNames, ...(targetRes.data ?? []).map((r) => r.owner_name)].filter(Boolean),
     ),
   ].sort((a, b) => a.localeCompare(b, "ja"));
   const kpiActual = sumOf(actualOf, "");
