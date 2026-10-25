@@ -142,7 +142,8 @@ export default async function ReportsPage() {
       .not("period_start", "is", null)
       .neq("invoices.status", "void"),
     // 新規(更新でない)契約のうち、過去12ヶ月に課金開始したもの(前年同月の獲得実績)と
-    // 今月以降に課金開始する締結済みのもの。解約・終了済みも獲得実績として数える
+    // 今月以降に課金開始する締結済みのもの(今年がすでに上回っていればこちらが型になる)。
+    // 解約・終了済みも獲得実績として数える
     db
       .from("contracts")
       .select(
@@ -215,8 +216,9 @@ export default async function ReportsPage() {
 
   // 成長シナリオ(継続率90%+新規は前年同月並み) = 今月〜再来年末の支払期限月ベース。
   // 実請求書はそのまま(締結済みなので100%)、未請求の回は今の契約年度より先の年度ぶん
-  // RETENTION を掛ける。新規は競合の契約明けにしか始まらず季節性が強いので、過去12ヶ月に
-  // 課金開始した新規契約を毎年同じ月に複製する。締結済みの新規がその月にある分は差し引く
+  // RETENTION を掛ける。新規は競合の契約明けにしか始まらず季節性が強いので、暦月ごとに
+  // 去年と今年(締結済み)の大きい方の新規契約を毎年同じ月に複製する。
+  // 締結済みの新規がその月にある分は差し引く
   const growthEnd = `${Number(thisMonth.slice(0, 4)) + 2}-12`;
   const growth = new Map<string, number[]>();
   const addGrowth = (key: string, si: number, v: number) => {
@@ -239,45 +241,44 @@ export default async function ReportsPage() {
       addGrowth(r.dueKey, 2, withTax(r.subtotal, c.tax_rate) * survive);
     }
   }
-  // 新規の規模は初年度の利用料(年額)で測る。月キー → 年額合計
+  // 新規の規模は初年度の利用料(年額)で測る
   const annualOf = (c: BillingContract) =>
     c.amount_per_billing * (c.billing_cycle === "annual" ? 1 : 2);
-  const lastYear = (newRes.data ?? []).filter(
-    (c) => c.billing_start_date.slice(0, 7) < thisMonth,
-  );
-  const lastYearByMonth = new Map<string, number>();
-  for (const c of lastYear) {
-    const mm = c.billing_start_date.slice(5, 7);
-    lastYearByMonth.set(mm, (lastYearByMonth.get(mm) ?? 0) + annualOf(c));
-  }
-  const signedByMonth = new Map<string, number>();
+  // 課金開始月キー → その月に始まる新規契約
+  const startsByMonth = new Map<string, NonNullable<typeof newRes.data>>();
   for (const c of newRes.data ?? []) {
     const key = c.billing_start_date.slice(0, 7);
-    if (key < thisMonth) continue;
-    signedByMonth.set(key, (signedByMonth.get(key) ?? 0) + annualOf(c));
+    startsByMonth.set(key, [...(startsByMonth.get(key) ?? []), c]);
   }
-  for (const t of lastYear) {
-    const oneTimeFees = sum(
-      (t.contract_fees ?? []).filter((f) => !f.recurring).map((f) => f.amount),
-    );
-    const day = t.billing_start_date.slice(8);
-    const ly = lastYearByMonth.get(t.billing_start_date.slice(5, 7))!;
-    for (let n = 1; ; n++) {
-      const startKey = addMonth(t.billing_start_date.slice(0, 7), 12 * n);
-      if (startKey > growthEnd) break;
-      // 前年並みのうち、締結済みの新規でまだ埋まっていない割合だけ足す
-      // (0円契約だけの月は ly=0 なので割らない。足しても金額は0)
-      const signed = signedByMonth.get(startKey) ?? 0;
-      const remaining = ly > 0 ? Math.max(0, 1 - signed / ly) : 1;
-      if (remaining === 0) continue;
-      const start = `${startKey}-${day}`;
-      for (const r of billingRuns({ ...t, billing_start_date: start }, growthEnd)) {
-        const subtotal = r.subtotal + (r.k === 0 ? oneTimeFees : 0);
-        addGrowth(
-          r.dueKey,
-          3,
-          withTax(subtotal, t.tax_rate) * RETENTION ** r.year * remaining,
-        );
+  const annualIn = (key: string) => sum((startsByMonth.get(key) ?? []).map(annualOf));
+  // 暦月ごとに、去年のその月と今後12ヶ月内のその月(締結済み)の大きい方を型にする。
+  // 今年がもう去年を超えている月は、翌年以降も今年の規模で始まる
+  for (let i = 0; i < 12; i++) {
+    const upcoming = addMonth(thisMonth, i);
+    const prev = addMonth(upcoming, -12);
+    const base = annualIn(upcoming) > annualIn(prev) ? upcoming : prev;
+    const ly = annualIn(base);
+    for (const t of startsByMonth.get(base) ?? []) {
+      const oneTimeFees = sum(
+        (t.contract_fees ?? []).filter((f) => !f.recurring).map((f) => f.amount),
+      );
+      const day = t.billing_start_date.slice(8);
+      for (let n = 1; ; n++) {
+        const startKey = addMonth(base, 12 * n);
+        if (startKey > growthEnd) break;
+        // 型のうち、締結済みの新規でまだ埋まっていない割合だけ足す
+        // (0円契約だけの月は ly=0 なので割らない。足しても金額は0)
+        const remaining = ly > 0 ? Math.max(0, 1 - annualIn(startKey) / ly) : 1;
+        if (remaining === 0) continue;
+        const start = `${startKey}-${day}`;
+        for (const r of billingRuns({ ...t, billing_start_date: start }, growthEnd)) {
+          const subtotal = r.subtotal + (r.k === 0 ? oneTimeFees : 0);
+          addGrowth(
+            r.dueKey,
+            3,
+            withTax(subtotal, t.tax_rate) * RETENTION ** r.year * remaining,
+          );
+        }
       }
     }
   }
@@ -415,7 +416,7 @@ export default async function ReportsPage() {
         <CardHeader>
           <CardTitle>成長シナリオ(継続率90%・新規は前年同月並み)</CardTitle>
           <p className="text-xs text-ink-muted">
-            契約更新のたびに90%が継続し、新規は去年その月に課金開始した分と同じだけ毎年始まる(締結済みの新規はそこから差し引き)場合の入金額。支払期限月で集計・税込。
+            契約更新のたびに90%が継続し、新規は去年その月に課金開始した分(今年の締結済みがそれを超えた月は今年の分)と同じだけ毎年始まる(締結済みの新規はそこから差し引き)場合の入金額。支払期限月で集計・税込。
             {Number(thisMonth.slice(0, 4))}年{Number(thisMonth.slice(5))}月〜
             {growthEnd.slice(0, 4)}年末の合計{" "}
             {formatJPYCompact(growthTotal)}
