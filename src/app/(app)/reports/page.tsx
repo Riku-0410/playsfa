@@ -154,7 +154,7 @@ export default async function ReportsPage() {
       )
       .is("previous_contract_id", null)
       .gte("billing_start_date", `${lastYearFrom}-01`),
-    // 新規見込み額の手入力(今月以降)
+    // 新規見込み額の手入力(今月以降)。締結済みとは別に「あとこれだけ獲得する」額
     db.from("new_contract_targets").select("month, amount").gte("month", `${thisMonth}-01`),
   ]);
 
@@ -223,7 +223,7 @@ export default async function ReportsPage() {
   // 実請求書はそのまま(締結済みなので100%)、未請求の回は今の契約年度より先の年度ぶん
   // RETENTION を掛ける。新規は競合の契約明けにしか始まらず季節性が強いので、暦月ごとに
   // 去年と今年(締結済み)の大きい方の新規契約を毎年同じ月に複製する。手入力の見込み額がある月は
-  // その額に合わせて伸縮し、翌年以降の同じ月にも引き継ぐ。締結済みの新規がその月にある分は差し引く
+  // 締結済み+その額に合わせて伸縮し、翌年以降の同じ月にも引き継ぐ。締結済みの新規がその月にある分は差し引く
   const growthEnd = `${Number(thisMonth.slice(0, 4)) + 2}-12`;
   const growth = new Map<string, number[]>();
   const addGrowth = (key: string, si: number, v: number) => {
@@ -282,10 +282,11 @@ export default async function ReportsPage() {
     if (annualIn(base) === 0) shape = pastStarts;
     const shapeAnnual = sum(shape.map(annualOf));
     if (shapeAnnual === 0) continue;
-    // その年のその月に始まる新規の規模。手入力があればそれ、なければ前の年の規模を引き継ぐ
+    // その年のその月に始まる新規の規模。手入力があれば締結済み+その額、なければ前の年の規模を引き継ぐ
     let level = annualIn(base);
     for (let startKey = upcoming; startKey <= growthEnd; startKey = addMonth(startKey, 12)) {
-      level = targetOf.get(startKey) ?? level;
+      const extra = targetOf.get(startKey);
+      if (extra !== undefined) level = annualIn(startKey) + extra;
       // 締結済みの新規でまだ埋まっていない分だけ、型の契約を縮尺して足す
       const gap = level - annualIn(startKey);
       if (gap <= 0) continue;
@@ -456,7 +457,7 @@ export default async function ReportsPage() {
           <form action={saveNewContractTargets} className="mt-6 border-t border-line pt-5">
             <p className="text-xs font-bold text-ink-secondary">月ごとの新規見込み額</p>
             <p className="mt-1 text-xs text-ink-muted">
-              その月に課金開始する新規の初年度の契約額(税抜・全社)。空欄なら去年のその月と締結済みの大きい方。入れた額は翌年以降の同じ月にも引き継ぎます。「200万」のようにも入力できます。
+              締結済みに加えて、その月に課金開始する新規をあといくら獲得するか(初年度の契約額・税抜・全社)。空欄なら去年のその月に届かない分だけ。締結済み+入れた額を翌年以降の同じ月にも引き継ぎます。「200万」のようにも入力できます。
             </p>
             <Table className="mt-2">
               <thead>
@@ -464,7 +465,7 @@ export default async function ReportsPage() {
                   <TH>月</TH>
                   <TH numeric>去年のその月</TH>
                   <TH numeric>締結済み</TH>
-                  <TH numeric>新規見込み額</TH>
+                  <TH numeric>あと獲得する見込み</TH>
                 </tr>
               </thead>
               <tbody>
@@ -487,8 +488,8 @@ export default async function ReportsPage() {
                               ? `${p.target / 10000}万`
                               : p.target
                         }
-                        placeholder={formatJPY(Math.max(p.lastYear, p.signed))}
-                        aria-label={`${p.key}の新規見込み額`}
+                        placeholder={formatJPY(Math.max(0, p.lastYear - p.signed))}
+                        aria-label={`${p.key}にあと獲得する新規の見込み額`}
                         className="ml-auto h-9 w-36 px-2.5 text-right"
                       />
                     </TD>

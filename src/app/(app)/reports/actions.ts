@@ -5,7 +5,8 @@ import { num } from "@/lib/form";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
- * 成長シナリオの新規見込み額の保存。フィールド名: month_<i> = "yyyy-MM-01"、amount_<i> = 金額。
+ * 成長シナリオの新規見込み額(締結済みとは別に、その月にあと獲得する額)の保存。
+ * フィールド名: month_<i> = "yyyy-MM-01"、amount_<i> = 金額。
  * 「200万」のような書き方も受ける。入力が空の欄は「未設定」に戻す(行削除)。
  */
 export async function saveNewContractTargets(formData: FormData) {
