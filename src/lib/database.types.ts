@@ -566,6 +566,24 @@ export type Database = {
           },
         ]
       }
+      sales_hires: {
+        Row: {
+          headcount: number
+          month: string
+          updated_at: string
+        }
+        Insert: {
+          headcount: number
+          month: string
+          updated_at?: string
+        }
+        Update: {
+          headcount?: number
+          month?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       sales_reps: {
         Row: {
           created_at: string

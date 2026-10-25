@@ -57,6 +57,9 @@ const GROWTH_SERIES = [
 
 /** 成長シナリオの前提: 契約更新ごとの継続率 */
 const RETENTION = 0.9;
+/** 採用した営業が新規を取り始めるまでの月数と、立ち上がり後の1人あたり新規獲得額(月平均・初年度の契約額・税抜) */
+const RAMP_MONTHS = 2;
+const REP_MONTHLY_NEW = 1_000_000;
 
 function sum(values: number[]): number {
   return values.reduce((a, b) => a + b, 0);
@@ -118,7 +121,8 @@ export default async function ReportsPage() {
   const today = todayJST();
   const thisMonth = today.slice(0, 7);
   const lastYearFrom = addMonth(thisMonth, -12);
-  const [trialRes, wonRes, invRes, contractRes, itemRes, newRes, targetRes] = await Promise.all([
+  const [trialRes, wonRes, invRes, contractRes, itemRes, newRes, targetRes, hireRes] =
+    await Promise.all([
     db.from("deals").select("trial_start, service").not("trial_start", "is", null),
     db
       .from("deals")
@@ -156,6 +160,11 @@ export default async function ReportsPage() {
       .gte("billing_start_date", `${lastYearFrom}-01`),
     // 新規見込み額の手入力(今月以降)。締結済みとは別に「あとこれだけ獲得する」額
     db.from("new_contract_targets").select("month, amount").gte("month", `${thisMonth}-01`),
+    // 採用計画。立ち上がりが去年の実績に入る前の入社(=まだ上乗せが要る人)まで遡る
+    db
+      .from("sales_hires")
+      .select("month, headcount")
+      .gte("month", `${addMonth(lastYearFrom, -RAMP_MONTHS)}-01`),
   ]);
 
   // 月キー → 系列順の値
@@ -223,7 +232,8 @@ export default async function ReportsPage() {
   // 実請求書はそのまま(締結済みなので100%)、未請求の回は今の契約年度より先の年度ぶん
   // RETENTION を掛ける。新規は競合の契約明けにしか始まらず季節性が強いので、暦月ごとに
   // 去年と今年(締結済み)の大きい方の新規契約を毎年同じ月に複製する。手入力の見込み額がある月は
-  // 締結済み+その額に合わせて伸縮し、翌年以降の同じ月にも引き継ぐ。締結済みの新規がその月にある分は差し引く
+  // 締結済み+その額に合わせて伸縮し、翌年以降の同じ月にも引き継ぐ。締結済みの新規がその月にある分は差し引く。
+  // 採用した営業のぶんは立ち上がり後の毎年、去年の月ごとの比率で配分して上乗せする(引き継ぎはしない)
   const growthEnd = `${Number(thisMonth.slice(0, 4)) + 2}-12`;
   const growth = new Map<string, number[]>();
   const addGrowth = (key: string, si: number, v: number) => {
@@ -264,31 +274,60 @@ export default async function ReportsPage() {
   const pastStarts = (newRes.data ?? []).filter(
     (c) => c.billing_start_date.slice(0, 7) < thisMonth,
   );
+  const hiresOf = new Map(
+    (hireRes.data ?? []).map((h) => [h.month.slice(0, 7), h.headcount]),
+  );
+  const hires = [...hiresOf].map(([month, headcount]) => ({
+    rampedAt: addMonth(month, RAMP_MONTHS),
+    headcount,
+  }));
+  // 採用1人ぶんの年間の新規を、去年の新規の月ごとの比率で配分する(去年がゼロなら均等)
+  const lastYearTotal = sum([...Array(12).keys()].map((i) => annualIn(addMonth(lastYearFrom, i))));
   // 今後12ヶ月の月ごとの新規見込み(初年度の契約額・税抜)。表に出す
-  const newPlan: { key: string; lastYear: number; signed: number; target?: number }[] = [];
+  const newPlan: {
+    key: string;
+    lastYear: number;
+    signed: number;
+    target?: number;
+    hires?: number;
+    /** 採用ぶんの上乗せ(その月) */
+    fromHires: number;
+  }[] = [];
   // 暦月ごとに、去年のその月と今後12ヶ月内のその月(締結済み)の大きい方を型にする。
   // 今年がもう去年を超えている月は、翌年以降も今年の規模で始まる
   for (let i = 0; i < 12; i++) {
     const upcoming = addMonth(thisMonth, i);
     const lastYearKey = addMonth(upcoming, -12);
+    const perRep =
+      REP_MONTHLY_NEW * 12 * (lastYearTotal > 0 ? annualIn(lastYearKey) / lastYearTotal : 1 / 12);
+    // 立ち上がり済みで、まだ去年の実績(この暦月の型)に入っていない人数
+    const repsAt = (startKey: string) =>
+      sum(
+        hires
+          .filter((h) => h.rampedAt <= startKey && h.rampedAt > lastYearKey)
+          .map((h) => h.headcount),
+      );
     newPlan.push({
       key: upcoming,
       lastYear: annualIn(lastYearKey),
       signed: annualIn(upcoming),
       target: targetOf.get(upcoming),
+      hires: hiresOf.get(upcoming),
+      fromHires: perRep * repsAt(upcoming),
     });
     const base = annualIn(upcoming) > annualIn(lastYearKey) ? upcoming : lastYearKey;
     let shape = startsByMonth.get(base) ?? [];
     if (annualIn(base) === 0) shape = pastStarts;
     const shapeAnnual = sum(shape.map(annualOf));
     if (shapeAnnual === 0) continue;
-    // その年のその月に始まる新規の規模。手入力があれば締結済み+その額、なければ前の年の規模を引き継ぐ
+    // その年のその月に始まる新規の規模(採用ぶんを除く)。手入力があれば締結済み+その額、
+    // なければ前の年の規模を引き継ぐ
     let level = annualIn(base);
     for (let startKey = upcoming; startKey <= growthEnd; startKey = addMonth(startKey, 12)) {
       const extra = targetOf.get(startKey);
       if (extra !== undefined) level = annualIn(startKey) + extra;
-      // 締結済みの新規でまだ埋まっていない分だけ、型の契約を縮尺して足す
-      const gap = level - annualIn(startKey);
+      // 締結済みの新規でまだ埋まっていない分+採用ぶんだけ、型の契約を縮尺して足す
+      const gap = level + perRep * repsAt(startKey) - annualIn(startKey);
       if (gap <= 0) continue;
       const scale = gap / shapeAnnual;
       for (const t of shape) {
@@ -455,9 +494,14 @@ export default async function ReportsPage() {
             ]}
           />
           <form action={saveNewContractTargets} className="mt-6 border-t border-line pt-5">
-            <p className="text-xs font-bold text-ink-secondary">月ごとの新規見込み額</p>
+            <p className="text-xs font-bold text-ink-secondary">月ごとの新規見込みと採用計画</p>
             <p className="mt-1 text-xs text-ink-muted">
-              締結済みに加えて、その月に課金開始する新規をあといくら獲得するか(初年度の契約額・税抜・全社)。空欄なら去年のその月に届かない分だけ。締結済み+入れた額を翌年以降の同じ月にも引き継ぎます。「200万」のようにも入力できます。
+              「あと獲得する見込み」は、締結済みに加えてその月に課金開始する新規をあといくら獲得するか(初年度の契約額・税抜・全社)。空欄なら去年のその月に届かない分だけ。締結済み+入れた額を翌年以降の同じ月にも引き継ぎます。「200万」のようにも入力できます。
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              「採用人数」はその月に入社する営業の人数。入社{RAMP_MONTHS}ヶ月後から1人あたり月平均
+              {formatJPYCompact(REP_MONTHLY_NEW)}(年{formatJPYCompact(REP_MONTHLY_NEW * 12)}
+              を去年の新規の月ごとの比率で配分)を、毎年「あと獲得する見込み」とは別に上乗せします。
             </p>
             <Table className="mt-2">
               <thead>
@@ -465,6 +509,8 @@ export default async function ReportsPage() {
                   <TH>月</TH>
                   <TH numeric>去年のその月</TH>
                   <TH numeric>締結済み</TH>
+                  <TH numeric>採用人数</TH>
+                  <TH numeric>採用ぶん</TH>
                   <TH numeric>あと獲得する見込み</TH>
                 </tr>
               </thead>
@@ -477,6 +523,24 @@ export default async function ReportsPage() {
                     </TD>
                     <TD numeric>{formatJPY(p.lastYear)}</TD>
                     <TD numeric>{formatJPY(p.signed)}</TD>
+                    <TD numeric className="py-2">
+                      <Input
+                        type="number"
+                        name={`hires_${i}`}
+                        min={0}
+                        step={1}
+                        defaultValue={p.hires ?? ""}
+                        aria-label={`${p.key}に入社する営業の人数`}
+                        className="ml-auto h-9 w-16 px-2.5 text-right"
+                      />
+                    </TD>
+                    <TD numeric>
+                      {p.fromHires > 0 ? (
+                        formatJPY(Math.round(p.fromHires))
+                      ) : (
+                        <span className="text-ink-muted">—</span>
+                      )}
+                    </TD>
                     <TD numeric className="py-2">
                       <Input
                         name={`amount_${i}`}
@@ -499,7 +563,7 @@ export default async function ReportsPage() {
             </Table>
             <div className="mt-4 flex justify-end">
               <Button type="submit" size="sm" variant="outline">
-                見込み額を保存
+                見込みと採用計画を保存
               </Button>
             </div>
           </form>
