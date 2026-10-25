@@ -507,6 +507,24 @@ export type Database = {
           },
         ]
       }
+      new_contract_targets: {
+        Row: {
+          amount: number
+          month: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          month: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          month?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           amount: number

@@ -1,6 +1,8 @@
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TD, TH, TR } from "@/components/ui/table";
 import {
   MonthlyStackedColumns,
@@ -10,6 +12,7 @@ import { todayJST } from "@/lib/dates";
 import { formatJPY, formatJPYCompact } from "@/lib/format";
 import { SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { saveNewContractTargets } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -115,7 +118,7 @@ export default async function ReportsPage() {
   const today = todayJST();
   const thisMonth = today.slice(0, 7);
   const lastYearFrom = addMonth(thisMonth, -12);
-  const [trialRes, wonRes, invRes, contractRes, itemRes, newRes] = await Promise.all([
+  const [trialRes, wonRes, invRes, contractRes, itemRes, newRes, targetRes] = await Promise.all([
     db.from("deals").select("trial_start, service").not("trial_start", "is", null),
     db
       .from("deals")
@@ -151,6 +154,8 @@ export default async function ReportsPage() {
       )
       .is("previous_contract_id", null)
       .gte("billing_start_date", `${lastYearFrom}-01`),
+    // 新規見込み額の手入力(今月以降)
+    db.from("new_contract_targets").select("month, amount").gte("month", `${thisMonth}-01`),
   ]);
 
   // 月キー → 系列順の値
@@ -217,8 +222,8 @@ export default async function ReportsPage() {
   // 成長シナリオ(継続率90%+新規は前年同月並み) = 今月〜再来年末の支払期限月ベース。
   // 実請求書はそのまま(締結済みなので100%)、未請求の回は今の契約年度より先の年度ぶん
   // RETENTION を掛ける。新規は競合の契約明けにしか始まらず季節性が強いので、暦月ごとに
-  // 去年と今年(締結済み)の大きい方の新規契約を毎年同じ月に複製する。
-  // 締結済みの新規がその月にある分は差し引く
+  // 去年と今年(締結済み)の大きい方の新規契約を毎年同じ月に複製する。手入力の見込み額がある月は
+  // その額に合わせて伸縮し、翌年以降の同じ月にも引き継ぐ。締結済みの新規がその月にある分は差し引く
   const growthEnd = `${Number(thisMonth.slice(0, 4)) + 2}-12`;
   const growth = new Map<string, number[]>();
   const addGrowth = (key: string, si: number, v: number) => {
@@ -251,33 +256,48 @@ export default async function ReportsPage() {
     startsByMonth.set(key, [...(startsByMonth.get(key) ?? []), c]);
   }
   const annualIn = (key: string) => sum((startsByMonth.get(key) ?? []).map(annualOf));
+  const targetOf = new Map(
+    (targetRes.data ?? []).map((t) => [t.month.slice(0, 7), t.amount]),
+  );
+  // 型にする契約がない月(去年も今年もゼロなのに手入力がある月)は、過去12ヶ月の新規全体の
+  // 構成(サービス・年払い/半年払い・税率)を借りる
+  const pastStarts = (newRes.data ?? []).filter(
+    (c) => c.billing_start_date.slice(0, 7) < thisMonth,
+  );
+  // 今後12ヶ月の月ごとの新規見込み(初年度の契約額・税抜)。表に出す
+  const newPlan: { key: string; lastYear: number; signed: number; target?: number }[] = [];
   // 暦月ごとに、去年のその月と今後12ヶ月内のその月(締結済み)の大きい方を型にする。
   // 今年がもう去年を超えている月は、翌年以降も今年の規模で始まる
   for (let i = 0; i < 12; i++) {
     const upcoming = addMonth(thisMonth, i);
-    const prev = addMonth(upcoming, -12);
-    const base = annualIn(upcoming) > annualIn(prev) ? upcoming : prev;
-    const ly = annualIn(base);
-    for (const t of startsByMonth.get(base) ?? []) {
-      const oneTimeFees = sum(
-        (t.contract_fees ?? []).filter((f) => !f.recurring).map((f) => f.amount),
-      );
-      const day = t.billing_start_date.slice(8);
-      for (let n = 1; ; n++) {
-        const startKey = addMonth(base, 12 * n);
-        if (startKey > growthEnd) break;
-        // 型のうち、締結済みの新規でまだ埋まっていない割合だけ足す
-        // (0円契約だけの月は ly=0 なので割らない。足しても金額は0)
-        const remaining = ly > 0 ? Math.max(0, 1 - annualIn(startKey) / ly) : 1;
-        if (remaining === 0) continue;
-        const start = `${startKey}-${day}`;
+    const lastYearKey = addMonth(upcoming, -12);
+    newPlan.push({
+      key: upcoming,
+      lastYear: annualIn(lastYearKey),
+      signed: annualIn(upcoming),
+      target: targetOf.get(upcoming),
+    });
+    const base = annualIn(upcoming) > annualIn(lastYearKey) ? upcoming : lastYearKey;
+    let shape = startsByMonth.get(base) ?? [];
+    if (annualIn(base) === 0) shape = pastStarts;
+    const shapeAnnual = sum(shape.map(annualOf));
+    if (shapeAnnual === 0) continue;
+    // その年のその月に始まる新規の規模。手入力があればそれ、なければ前の年の規模を引き継ぐ
+    let level = annualIn(base);
+    for (let startKey = upcoming; startKey <= growthEnd; startKey = addMonth(startKey, 12)) {
+      level = targetOf.get(startKey) ?? level;
+      // 締結済みの新規でまだ埋まっていない分だけ、型の契約を縮尺して足す
+      const gap = level - annualIn(startKey);
+      if (gap <= 0) continue;
+      const scale = gap / shapeAnnual;
+      for (const t of shape) {
+        const oneTimeFees = sum(
+          (t.contract_fees ?? []).filter((f) => !f.recurring).map((f) => f.amount),
+        );
+        const start = `${startKey}-${t.billing_start_date.slice(8)}`;
         for (const r of billingRuns({ ...t, billing_start_date: start }, growthEnd)) {
           const subtotal = r.subtotal + (r.k === 0 ? oneTimeFees : 0);
-          addGrowth(
-            r.dueKey,
-            3,
-            withTax(subtotal, t.tax_rate) * RETENTION ** r.year * remaining,
-          );
+          addGrowth(r.dueKey, 3, withTax(subtotal, t.tax_rate) * RETENTION ** r.year * scale);
         }
       }
     }
@@ -414,9 +434,9 @@ export default async function ReportsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>成長シナリオ(継続率90%・新規は前年同月並み)</CardTitle>
+          <CardTitle>成長シナリオ(継続率90%・新規は前年同月並みか手入力)</CardTitle>
           <p className="text-xs text-ink-muted">
-            契約更新のたびに90%が継続し、新規は去年その月に課金開始した分(今年の締結済みがそれを超えた月は今年の分)と同じだけ毎年始まる(締結済みの新規はそこから差し引き)場合の入金額。支払期限月で集計・税込。
+            契約更新のたびに90%が継続し、新規は去年その月に課金開始した分(今年の締結済みがそれを超えた月は今年の分、下の表で見込み額を入れた月はその額)と同じだけ毎年始まる(締結済みの新規はそこから差し引き)場合の入金額。支払期限月で集計・税込。
             {Number(thisMonth.slice(0, 4))}年{Number(thisMonth.slice(5))}月〜
             {growthEnd.slice(0, 4)}年末の合計{" "}
             {formatJPYCompact(growthTotal)}
@@ -424,7 +444,7 @@ export default async function ReportsPage() {
         </CardHeader>
         <CardBody>
           <MonthlyStackedColumns
-            title="成長シナリオ(継続率90%・新規は前年同月並み)"
+            title="成長シナリオ(継続率90%・新規は前年同月並みか手入力)"
             data={growthMonths}
             series={GROWTH_SERIES}
             money
@@ -433,6 +453,55 @@ export default async function ReportsPage() {
               { label: "見込み", indices: [2, 3] },
             ]}
           />
+          <form action={saveNewContractTargets} className="mt-6 border-t border-line pt-5">
+            <p className="text-xs font-bold text-ink-secondary">月ごとの新規見込み額</p>
+            <p className="mt-1 text-xs text-ink-muted">
+              その月に課金開始する新規の初年度の契約額(税抜・全社)。空欄なら去年のその月と締結済みの大きい方。入れた額は翌年以降の同じ月にも引き継ぎます。「200万」のようにも入力できます。
+            </p>
+            <Table className="mt-2">
+              <thead>
+                <tr>
+                  <TH>月</TH>
+                  <TH numeric>去年のその月</TH>
+                  <TH numeric>締結済み</TH>
+                  <TH numeric>新規見込み額</TH>
+                </tr>
+              </thead>
+              <tbody>
+                {newPlan.map((p, i) => (
+                  <TR key={p.key}>
+                    <TD className="font-semibold">
+                      {Number(p.key.slice(0, 4))}年{Number(p.key.slice(5))}月
+                      <input type="hidden" name={`month_${i}`} value={`${p.key}-01`} />
+                    </TD>
+                    <TD numeric>{formatJPY(p.lastYear)}</TD>
+                    <TD numeric>{formatJPY(p.signed)}</TD>
+                    <TD numeric className="py-2">
+                      <Input
+                        name={`amount_${i}`}
+                        inputMode="numeric"
+                        defaultValue={
+                          p.target === undefined
+                            ? ""
+                            : p.target % 10000 === 0
+                              ? `${p.target / 10000}万`
+                              : p.target
+                        }
+                        placeholder={formatJPY(Math.max(p.lastYear, p.signed))}
+                        aria-label={`${p.key}の新規見込み額`}
+                        className="ml-auto h-9 w-36 px-2.5 text-right"
+                      />
+                    </TD>
+                  </TR>
+                ))}
+              </tbody>
+            </Table>
+            <div className="mt-4 flex justify-end">
+              <Button type="submit" size="sm" variant="outline">
+                見込み額を保存
+              </Button>
+            </div>
+          </form>
         </CardBody>
       </Card>
 
