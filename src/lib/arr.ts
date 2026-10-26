@@ -39,7 +39,18 @@ function contractArr(c: ArrContract): number {
   return usage + fees;
 }
 
-/** 渡された契約群のARR。ステータスの絞り込みは呼び出し側の責任 */
+/**
+ * 更新先が同じ集合にある契約を除く。更新の請求書を先に送ると新しい契約が課金中になり、
+ * 前の契約も期間満了までは課金中のままなので、そのまま足すと同じ顧客を二重に数える
+ */
+export function withoutSuperseded<T extends { id: string; previous_contract_id: string | null }>(
+  contracts: T[],
+): T[] {
+  const superseded = new Set(contracts.map((c) => c.previous_contract_id));
+  return contracts.filter((c) => !superseded.has(c.id));
+}
+
+/** 渡された契約群のARR。ステータスの絞り込みと更新の重複除去は呼び出し側の責任 */
 export function calcArr(contracts: ArrContract[]): ArrBreakdown {
   const byService = Object.fromEntries(
     (Object.keys(SERVICES) as Service[]).map((s) => [s, { total: 0, count: 0 }]),

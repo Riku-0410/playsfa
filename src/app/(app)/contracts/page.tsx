@@ -9,7 +9,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { SortableTH } from "@/components/ui/sortable-th";
 import { StatCard } from "@/components/ui/stat-card";
 import { Table, TD, TH, TR } from "@/components/ui/table";
-import { calcArr } from "@/lib/arr";
+import { calcArr, withoutSuperseded } from "@/lib/arr";
 import { contractEndDate } from "@/lib/billing";
 import { cn } from "@/lib/cn";
 import { todayJST } from "@/lib/dates";
@@ -62,7 +62,7 @@ export default async function ContractsPage({
   const arrQuery = db
     .from("contracts")
     .select(
-      "service, billing_cycle, amount_per_billing, status, contract_fees(amount, recurring)",
+      "id, previous_contract_id, service, billing_cycle, amount_per_billing, status, contract_fees(amount, recurring)",
     )
     .in("status", ["active", "pending"]);
 
@@ -79,10 +79,9 @@ export default async function ContractsPage({
   const renewed = new Set((renewedRows ?? []).map((r) => r.previous_contract_id));
   const total = count ?? 0;
 
-  const arr = calcArr((arrRows ?? []).filter((c) => c.status === "active"));
-  const pendingArr = calcArr(
-    (arrRows ?? []).filter((c) => c.status === "pending"),
-  );
+  // ARR = 課金中、CARR = 課金中+課金待ち(締結済みで課金開始前)。どちらも更新は新しい契約だけ数える
+  const arr = calcArr(withoutSuperseded((arrRows ?? []).filter((c) => c.status === "active")));
+  const carr = calcArr(withoutSuperseded(arrRows ?? []));
 
   const keptParams = { q: q ?? undefined, sort: raw.sort, dir: raw.dir };
   const sortProps = {
@@ -103,21 +102,32 @@ export default async function ContractsPage({
           </Link>
         }
       />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <StatCard
+          label="ARR(課金中)"
+          value={formatJPY(arr.total)}
+          note={`課金中${arr.count}件`}
+        />
+        <StatCard
+          label="CARR(課金待ち込み)"
+          value={formatJPY(carr.total)}
+          note={`課金中+課金待ち${carr.count}件。ARRとの差 +${formatJPY(carr.total - arr.total)}`}
+        />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="ARR(課金中)" value={formatJPY(arr.total)} />
         {(Object.keys(SERVICES) as (keyof typeof SERVICES)[]).map((s) => (
           <StatCard
             key={s}
             label={`ARR ${SERVICES[s].label}`}
             value={formatJPY(arr.byService[s].total)}
+            note={`CARR ${formatJPY(carr.byService[s].total)}`}
           />
         ))}
       </div>
       <p className="text-xs text-ink-muted">
         課金中{arr.count}件の年換算。内訳は利用料 {formatJPY(arr.usage)} +
         毎年かかる契約費用 {formatJPY(arr.recurringFees)}(いずれも税抜、初期費用は除く)。
-        {pendingArr.count > 0 &&
-          ` 課金待ち${pendingArr.count}件（${formatJPY(pendingArr.total)}）は未計上。`}
+        CARRは締結済みで課金開始前の契約(課金待ち)も含めたもの。どちらも更新した契約は新しい方だけ数えます。
       </p>
       <div className="flex justify-end">
         <ListSearch
