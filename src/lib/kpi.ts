@@ -27,6 +27,14 @@ export const KPI_PERIODS = [
   amountTarget: number;
 }[];
 
+/** 仮の平均顧客単価(初年度の年額・税抜)。トライアル目標件数から目標売上(仮)を出すのに使う */
+export const AVG_UNIT_PRICE: Record<Service, number> = {
+  playcut: 200_000,
+  baskestats: 80_000,
+  playone: 150_000,
+  playcut_ipad: 120_000,
+};
+
 export type KpiPeriod = (typeof KPI_PERIODS)[number];
 /** その期でKPIを置いているサービス(目標のあるもの) */
 export type KpiService = keyof KpiPeriod["monthly"];

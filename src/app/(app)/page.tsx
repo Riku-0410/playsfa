@@ -16,7 +16,7 @@ import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConfirmForm } from "@/components/confirm-form";
 import { findPipelineGaps } from "@/lib/integrity";
-import { currentPeriod, kpiSummary } from "@/lib/kpi";
+import { AVG_UNIT_PRICE, currentPeriod, kpiSummary } from "@/lib/kpi";
 import { listReps } from "@/lib/reps";
 import { createMissingInvoice, endContract } from "./contracts/actions";
 import { markSent, registerPayment } from "./invoices/actions";
@@ -341,6 +341,12 @@ export default async function DashboardPage({
   const kpiTarget = SERVICE_KEYS.reduce((a, s) => a + (targetOf.get(`|${s}`) ?? 0), 0);
   const kpiPct = kpiTarget > 0 ? Math.round((kpiActual / kpiTarget) * 100) : null;
   const kpiAmount = SERVICE_KEYS.reduce((a, s) => a + (amountOf.get(`|${s}`) ?? 0), 0);
+  // 目標売上(仮) = 全社の目標件数 × 仮の平均顧客単価
+  const targetedServices = SERVICE_KEYS.filter((s) => (targetOf.get(`|${s}`) ?? 0) > 0);
+  const targetRevenue = targetedServices.reduce(
+    (a, s) => a + targetOf.get(`|${s}`)! * AVG_UNIT_PRICE[s],
+    0,
+  );
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
@@ -478,6 +484,26 @@ export default async function DashboardPage({
                 ))}
               </div>
             </div>
+
+            {targetRevenue > 0 && (
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-inner bg-sunken px-4 py-3">
+                <span className="text-xs font-semibold text-ink-secondary">
+                  {kpiMonthLabel}の目標売上(仮)
+                </span>
+                <span className="text-xl font-bold tracking-tight">
+                  {formatJPY(targetRevenue)}
+                </span>
+                <span className="text-xs text-ink-muted">
+                  目標件数 × 平均顧客単価(年・税抜):{" "}
+                  {targetedServices
+                    .map(
+                      (s) =>
+                        `${SERVICES[s].label} ${targetOf.get(`|${s}`)}件×${formatJPYCompact(AVG_UNIT_PRICE[s])}`,
+                    )
+                    .join(" + ")}
+                </span>
+              </div>
+            )}
 
             {reps.length > 0 && (
               <div className="border-t border-line pt-5">
