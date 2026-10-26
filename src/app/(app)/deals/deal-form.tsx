@@ -5,6 +5,7 @@ import { Field, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select } from "@/components/ui/input";
 import { SearchSelect } from "@/components/ui/search-select";
 import { DEAL_STAGES, RETIRED_DEAL_STAGES, SERVICES } from "@/lib/status";
+import { AmountField } from "./amount-field";
 import { ServiceAmountFields } from "./service-amount-fields";
 import { TrialDateFields } from "./trial-date-fields";
 
@@ -106,16 +107,11 @@ export function DealForm({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <StageField stage={deal?.stage} />
-            <Field>
-              <Label htmlFor="deal-amount">見込額(年・税抜)</Label>
-              <Input
-                id="deal-amount"
-                name="amount_expected"
-                inputMode="numeric"
-                placeholder="480,000"
-                defaultValue={deal?.amount_expected ?? ""}
-              />
-            </Field>
+            <AmountField
+              id="deal-amount"
+              name="amount_expected"
+              defaultValue={deal?.amount_expected}
+            />
           </div>
         </>
       ) : (

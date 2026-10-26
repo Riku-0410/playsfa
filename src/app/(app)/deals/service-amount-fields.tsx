@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { CheckboxPill } from "@/components/ui/checkbox-pill";
 import { Field, FieldHint, Label } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { SERVICES } from "@/lib/status";
+import { AmountField } from "./amount-field";
 
 /**
  * 新規商談用のサービス選択+見込額入力。
@@ -66,19 +66,14 @@ export function ServiceAmountFields({
       {chosen.length > 0 && (
         <div className="grid grid-cols-2 gap-4">
           {chosen.map((k) => (
-            <Field key={k}>
-              <Label htmlFor={`deal-amount-${k}`}>
-                見込額(年・税抜)
-                {chosen.length > 1 &&
-                  ` — ${SERVICES[k as keyof typeof SERVICES].label}`}
-              </Label>
-              <Input
-                id={`deal-amount-${k}`}
-                name={`amount_expected_${k}`}
-                inputMode="numeric"
-                placeholder="480,000"
-              />
-            </Field>
+            <AmountField
+              key={k}
+              id={`deal-amount-${k}`}
+              name={`amount_expected_${k}`}
+              label={`見込額(年・税抜)${
+                chosen.length > 1 ? ` — ${SERVICES[k as keyof typeof SERVICES].label}` : ""
+              }`}
+            />
           ))}
         </div>
       )}

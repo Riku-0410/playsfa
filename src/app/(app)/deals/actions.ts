@@ -19,6 +19,9 @@ function plannedMonth(formData: FormData, stage: Stage): string | null {
   return stage === "trial_planned" ? `${todayJST().slice(0, 7)}-01` : null;
 }
 
+/** トライアル中の商談は見込額が必須(KPIの積み上げ金額に使う) */
+const TRIAL_AMOUNT_REQUIRED = "トライアル中の商談は見込額が必須です";
+
 function dealValues(formData: FormData) {
   const stage = requiredStr(formData, "stage") as Stage;
   if (RETIRED_DEAL_STAGES.includes(stage)) {
@@ -57,15 +60,17 @@ export async function createDeal(formData: FormData) {
   if (values.stage === "won") {
     throw new Error("成約は契約の作成で設定されます");
   }
+  const rows = services.map((service) => ({
+    ...values,
+    service,
+    amount_expected: num(formData, `amount_expected_${service}`),
+  }));
+  if (values.stage === "trial" && rows.some((r) => r.amount_expected === null)) {
+    throw new Error(TRIAL_AMOUNT_REQUIRED);
+  }
   const { data, error } = await db
     .from("deals")
-    .insert(
-      services.map((service) => ({
-        ...values,
-        service,
-        amount_expected: num(formData, `amount_expected_${service}`),
-      })),
-    )
+    .insert(rows)
     .select("id");
   if (error) throw error;
   revalidatePath("/deals");
@@ -100,6 +105,9 @@ export async function updateDeal(formData: FormData) {
   if (before?.stage === "won") values.stage = "won";
   else if (values.stage === "won") {
     throw new Error("成約は契約の作成で設定されます");
+  }
+  if (values.stage === "trial" && values.amount_expected === null) {
+    throw new Error(TRIAL_AMOUNT_REQUIRED);
   }
   const isClosed = values.stage === "won" || values.stage === "lost";
   const closed = !isClosed
