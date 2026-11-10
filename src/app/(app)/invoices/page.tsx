@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListFilterSelect } from "@/components/ui/list-filter-select";
 import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -14,6 +15,7 @@ import { formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { INVOICE_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { filterByOwner, listReps, ownerFilterOptions } from "@/lib/reps";
 import { addMonths, monthBoundsJST } from "@/lib/dates";
 import { ConfirmForm } from "@/components/confirm-form";
 import {
@@ -38,6 +40,7 @@ const FILTERS: Record<string, string> = {
 const SORTS = {
   number: "invoice_number",
   customer: "customers(name)",
+  owner: "customers(owner_name)",
   period: "period_start",
   issue: "issue_date",
   due: "due_date",
@@ -51,13 +54,16 @@ export default async function InvoicesPage({
   searchParams: Promise<{
     status?: string;
     contract?: string;
+    /** 顧客の弊社担当者(_none = 未設定) */
+    owner?: string;
     q?: string;
     page?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
-  const { status, contract, q: rawQ, ...raw } = await searchParams;
+  const { status, contract, owner, q: rawQ, ...raw } = await searchParams;
+  const activeOwner = owner || undefined;
   const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
@@ -80,7 +86,7 @@ export default async function InvoicesPage({
   let query = db
     .from("invoices")
     .select(
-      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, sent_at, customers!inner(id, name), invoice_items(contract_id, contracts(service))",
+      "id, invoice_number, period_start, period_end, issue_date, due_date, total, status, sent_at, customers!inner(id, name, owner_name), invoice_items(contract_id, contracts(service))",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -98,20 +104,22 @@ export default async function InvoicesPage({
     query = query.eq("status", status as keyof typeof INVOICE_STATUSES);
   }
   if (contractInvoiceIds) query = query.in("id", contractInvoiceIds);
+  query = filterByOwner(query, activeOwner);
   if (q) query = query.ilike("customers.name", `%${q}%`);
-  const { data: invoices, count } = await query;
+  const [{ data: invoices, count }, reps] = await Promise.all([query, listReps(db)]);
   const total = count ?? 0;
 
   const keptParams = {
     status,
     contract,
+    owner: activeOwner,
     q: q ?? undefined,
     sort: raw.sort,
     dir: raw.dir,
   };
   const sortProps = {
     basePath: "/invoices",
-    params: { status, contract, q: q ?? undefined },
+    params: { status, contract, owner: activeOwner, q: q ?? undefined },
     sort: sortKey,
     dir,
   };
@@ -139,6 +147,7 @@ export default async function InvoicesPage({
         <Link
           href={listHref("/invoices", {
             contract,
+            owner: activeOwner,
             q: q ?? undefined,
             sort: raw.sort,
             dir: raw.dir,
@@ -158,6 +167,7 @@ export default async function InvoicesPage({
             href={listHref("/invoices", {
               status: k,
               contract,
+              owner: activeOwner,
               q: q ?? undefined,
               sort: raw.sort,
               dir: raw.dir,
@@ -173,12 +183,23 @@ export default async function InvoicesPage({
           </Link>
         ))}
         </div>
-        <ListSearch
-          basePath="/invoices"
-          q={rawQ}
-          placeholder="顧客名で検索…"
-          params={{ status, contract, sort: raw.sort, dir: raw.dir }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <ListFilterSelect
+            basePath="/invoices"
+            name="owner"
+            value={activeOwner}
+            options={ownerFilterOptions(reps)}
+            allLabel="全担当者"
+            label="弊社担当者で絞り込む"
+            params={{ status, contract, q: q ?? undefined, sort: raw.sort, dir: raw.dir }}
+          />
+          <ListSearch
+            basePath="/invoices"
+            q={rawQ}
+            placeholder="顧客名で検索…"
+            params={{ status, contract, owner: activeOwner, sort: raw.sort, dir: raw.dir }}
+          />
+        </div>
       </div>
 
       <MergeProvider>
@@ -208,6 +229,7 @@ export default async function InvoicesPage({
                   <TH className="w-8" />
                   <SortableTH label="請求番号" sortKey="number" {...sortProps} />
                   <SortableTH label="顧客" sortKey="customer" {...sortProps} />
+                  <SortableTH label="担当" sortKey="owner" {...sortProps} />
                   <TH>サービス</TH>
                   <SortableTH label="対象期間" sortKey="period" {...sortProps} />
                   <SortableTH label="発行日" sortKey="issue" {...sortProps} />
@@ -261,6 +283,9 @@ export default async function InvoicesPage({
                         >
                           {inv.customers?.name}
                         </Link>
+                      </TD>
+                      <TD className="whitespace-nowrap text-ink-secondary">
+                        {inv.customers?.owner_name ?? "—"}
                       </TD>
                       <TD>
                         <div className="flex flex-col gap-1">

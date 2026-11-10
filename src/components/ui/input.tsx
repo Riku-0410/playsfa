@@ -29,12 +29,20 @@ export function Textarea({
 export function Select({
   className,
   children,
+  compact = false,
   ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement>) {
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  /** 一覧のフィルタ行用(h-9、チップ・検索ボックスと高さを揃える) */
+  compact?: boolean;
+}) {
   return (
     <div className={cn("relative", className)}>
       <select
-        className={cn(fieldBase, "h-11 appearance-none pr-10 cursor-pointer")}
+        className={cn(
+          fieldBase,
+          compact ? "h-9" : "h-11",
+          "appearance-none pr-10 cursor-pointer",
+        )}
         {...props}
       >
         {children}

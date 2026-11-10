@@ -8,6 +8,7 @@ import { DotProgress } from "@/components/ui/dot-progress";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Field, FieldError, FieldHint, Label } from "@/components/ui/field";
 import { Input, Select, Textarea } from "@/components/ui/input";
+import { ListFilterSelect } from "@/components/ui/list-filter-select";
 import { ListSearch } from "@/components/ui/list-search";
 import { Meter } from "@/components/ui/meter";
 import { Modal } from "@/components/ui/modal";
@@ -308,8 +309,19 @@ export default function DesignPage() {
       </Section>
 
       <Section title="テーブル(請求書一覧)">
-        {/* ListSearch: GETフォームの検索ボックス。フィルタ・ソートはhiddenで保持 */}
-        <div className="flex justify-end">
+        {/* ListFilterSelect: 選ぶと即GET送信するセレクト型フィルタ(担当者など)。
+            ListSearch: GETフォームの検索ボックス。どちらもフィルタ・ソートはhiddenで保持 */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <ListFilterSelect
+            basePath="/design"
+            name="owner"
+            options={[
+              { value: "柴田", label: "柴田" },
+              { value: "_none", label: "担当者なし" },
+            ]}
+            allLabel="全担当者"
+            label="弊社担当者で絞り込む"
+          />
           <ListSearch basePath="/design" placeholder="顧客名で検索…" />
         </div>
         <Card>

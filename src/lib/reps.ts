@@ -20,3 +20,30 @@ export async function listReps(db: SupabaseClient<Database>): Promise<string[]> 
     ),
   ].sort((a, b) => a.localeCompare(b, "ja"));
 }
+
+/** 担当者フィルタで「顧客に担当者が設定されていない」を表す値 */
+export const NO_OWNER = "_none";
+
+/** 担当者フィルタの選択肢(候補 + 担当者なし) */
+export function ownerFilterOptions(reps: string[]) {
+  return [
+    ...reps.map((r) => ({ value: r, label: r })),
+    { value: NO_OWNER, label: "担当者なし" },
+  ];
+}
+
+/**
+ * customers!inner を埋め込んだクエリを、顧客の弊社担当者で絞り込む。
+ * owner が空なら何もしない
+ */
+export function filterByOwner<
+  Q extends {
+    eq(column: string, value: string): Q;
+    is(column: string, value: null): Q;
+  },
+>(query: Q, owner: string | undefined): Q {
+  if (!owner) return query;
+  return owner === NO_OWNER
+    ? query.is("customers.owner_name", null)
+    : query.eq("customers.owner_name", owner);
+}

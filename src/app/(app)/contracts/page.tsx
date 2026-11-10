@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListFilterSelect } from "@/components/ui/list-filter-select";
 import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -17,11 +18,13 @@ import { formatJPY } from "@/lib/format";
 import { parseListParams, searchQuery } from "@/lib/list-params";
 import { BILLING_CYCLES, CONTRACT_STATUSES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { filterByOwner, listReps, ownerFilterOptions } from "@/lib/reps";
 
 export const dynamic = "force-dynamic";
 
 const SORTS = {
   customer: "customers(name)",
+  owner: "customers(owner_name)",
   cycle: "billing_cycle",
   amount: "amount_per_billing",
   agreement: "agreement_date",
@@ -33,13 +36,16 @@ export default async function ContractsPage({
   searchParams,
 }: {
   searchParams: Promise<{
+    /** 顧客の弊社担当者(_none = 未設定) */
+    owner?: string;
     q?: string;
     page?: string;
     sort?: string;
     dir?: string;
   }>;
 }) {
-  const { q: rawQ, ...raw } = await searchParams;
+  const { owner, q: rawQ, ...raw } = await searchParams;
+  const activeOwner = owner || undefined;
   const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
@@ -50,12 +56,13 @@ export default async function ContractsPage({
   let query = db
     .from("contracts")
     .select(
-      "id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status, customers!inner(id, name)",
+      "id, service, billing_cycle, amount_per_billing, agreement_date, billing_start_date, term_months, status, customers!inner(id, name, owner_name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
     .order("id")
     .range(from, to);
+  query = filterByOwner(query, activeOwner);
   if (q) query = query.ilike("customers.name", `%${q}%`);
 
   // ARRは検索・ページングと独立に全契約から出す
@@ -66,7 +73,7 @@ export default async function ContractsPage({
     )
     .in("status", ["active", "pending"]);
 
-  const [{ data: contracts, count }, { data: arrRows }, { data: renewedRows }] =
+  const [{ data: contracts, count }, { data: arrRows }, { data: renewedRows }, reps] =
     await Promise.all([
       query,
       arrQuery,
@@ -74,6 +81,7 @@ export default async function ContractsPage({
         .from("contracts")
         .select("previous_contract_id")
         .not("previous_contract_id", "is", null),
+      listReps(db),
     ]);
   // 更新済み(新しい契約がある)の契約
   const renewed = new Set((renewedRows ?? []).map((r) => r.previous_contract_id));
@@ -83,10 +91,15 @@ export default async function ContractsPage({
   const arr = calcArr(withoutSuperseded((arrRows ?? []).filter((c) => c.status === "active")));
   const carr = calcArr(withoutSuperseded(arrRows ?? []));
 
-  const keptParams = { q: q ?? undefined, sort: raw.sort, dir: raw.dir };
+  const keptParams = {
+    owner: activeOwner,
+    q: q ?? undefined,
+    sort: raw.sort,
+    dir: raw.dir,
+  };
   const sortProps = {
     basePath: "/contracts",
-    params: { q: q ?? undefined },
+    params: { owner: activeOwner, q: q ?? undefined },
     sort: sortKey,
     dir,
   };
@@ -129,12 +142,21 @@ export default async function ContractsPage({
         毎年かかる契約費用 {formatJPY(arr.recurringFees)}(いずれも税抜、初期費用は除く)。
         CARRは締結済みで課金開始前の契約(課金待ち)も含めたもの。どちらも更新した契約は新しい方だけ数えます。
       </p>
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <ListFilterSelect
+          basePath="/contracts"
+          name="owner"
+          value={activeOwner}
+          options={ownerFilterOptions(reps)}
+          allLabel="全担当者"
+          label="弊社担当者で絞り込む"
+          params={{ q: q ?? undefined, sort: raw.sort, dir: raw.dir }}
+        />
         <ListSearch
           basePath="/contracts"
           q={rawQ}
           placeholder="顧客名で検索…"
-          params={{ sort: raw.sort, dir: raw.dir }}
+          params={{ owner: activeOwner, sort: raw.sort, dir: raw.dir }}
         />
       </div>
       <Card>
@@ -161,6 +183,7 @@ export default async function ContractsPage({
               <thead>
                 <tr>
                   <SortableTH label="顧客" sortKey="customer" {...sortProps} />
+                  <SortableTH label="担当" sortKey="owner" {...sortProps} />
                   <TH>サービス</TH>
                   <SortableTH label="サイクル" sortKey="cycle" {...sortProps} />
                   <SortableTH
@@ -195,6 +218,9 @@ export default async function ContractsPage({
                       >
                         {c.customers?.name}
                       </Link>
+                    </TD>
+                    <TD className="whitespace-nowrap text-ink-secondary">
+                      {c.customers?.owner_name ?? "—"}
                     </TD>
                     <TD>
                       <Badge variant={SERVICES[c.service].badge} dot>

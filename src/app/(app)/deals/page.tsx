@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ListFilterSelect } from "@/components/ui/list-filter-select";
 import { ListSearch } from "@/components/ui/list-search";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
@@ -13,11 +14,13 @@ import { formatDateShort, formatJPY } from "@/lib/format";
 import { listHref, parseListParams, searchQuery } from "@/lib/list-params";
 import { DEAL_STAGES, RETIRED_DEAL_STAGES, SERVICES } from "@/lib/status";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { filterByOwner, listReps, ownerFilterOptions } from "@/lib/reps";
 
 export const dynamic = "force-dynamic";
 
 const SORTS = {
   customer: "customers(name)",
+  owner: "customers(owner_name)",
   stage: "stage",
   amount: "amount_expected",
   trial_end: "trial_end",
@@ -32,6 +35,8 @@ export default async function DealsPage({
   searchParams: Promise<{
     stage?: string;
     service?: string;
+    /** 顧客の弊社担当者(_none = 未設定) */
+    owner?: string;
     q?: string;
     page?: string;
     sort?: string;
@@ -40,10 +45,11 @@ export default async function DealsPage({
     no_trial_end?: string;
   }>;
 }) {
-  const { stage, service, q: rawQ, no_trial_end, ...raw } = await searchParams;
+  const { stage, service, owner, q: rawQ, no_trial_end, ...raw } = await searchParams;
   const noTrialEnd = no_trial_end === "1" ? "1" : undefined;
   const activeStage = stage && stage in DEAL_STAGES ? stage : undefined;
   const activeService = service && service in SERVICES ? service : undefined;
+  const activeOwner = owner || undefined;
   const q = searchQuery(rawQ);
   const { page, sortKey, orderExpr, dir, from, to } = parseListParams(raw, {
     sorts: SORTS,
@@ -54,7 +60,7 @@ export default async function DealsPage({
   let query = db
     .from("deals")
     .select(
-      "id, service, stage, amount_expected, trial_planned_month, trial_end, competitor, expected_billing_start, created_at, updated_at, customers!inner(id, name)",
+      "id, service, stage, amount_expected, trial_planned_month, trial_end, competitor, expected_billing_start, created_at, updated_at, customers!inner(id, name, owner_name)",
       { count: "exact" },
     )
     .order(orderExpr, { ascending: dir === "asc" })
@@ -66,14 +72,16 @@ export default async function DealsPage({
   if (activeService) {
     query = query.eq("service", activeService as keyof typeof SERVICES);
   }
+  query = filterByOwner(query, activeOwner);
   if (q) query = query.ilike("customers.name", `%${q}%`);
   if (noTrialEnd) query = query.eq("stage", "trial").is("trial_end", null);
-  const { data: deals, count } = await query;
+  const [{ data: deals, count }, reps] = await Promise.all([query, listReps(db)]);
   const total = count ?? 0;
 
   const keptParams = {
     stage: activeStage,
     service: activeService,
+    owner: activeOwner,
     q: q ?? undefined,
     sort: raw.sort,
     dir: raw.dir,
@@ -84,6 +92,7 @@ export default async function DealsPage({
     params: {
       stage: activeStage,
       service: activeService,
+      owner: activeOwner,
       q: q ?? undefined,
       no_trial_end: noTrialEnd,
     },
@@ -109,7 +118,11 @@ export default async function DealsPage({
             トライアル中で終了日が未入力の商談だけを表示しています
           </span>
           <Link
-            href={listHref("/deals", { service: activeService, q: q ?? undefined })}
+            href={listHref("/deals", {
+              service: activeService,
+              owner: activeOwner,
+              q: q ?? undefined,
+            })}
             className="font-semibold underline"
           >
             絞り込みを解除
@@ -122,6 +135,7 @@ export default async function DealsPage({
           <Link
             href={listHref("/deals", {
               service: activeService,
+              owner: activeOwner,
               q: q ?? undefined,
               sort: raw.sort,
               dir: raw.dir,
@@ -143,6 +157,7 @@ export default async function DealsPage({
                 href={listHref("/deals", {
                   stage: k,
                   service: activeService,
+                  owner: activeOwner,
                   q: q ?? undefined,
                   sort: raw.sort,
                   dir: raw.dir,
@@ -162,6 +177,7 @@ export default async function DealsPage({
           <Link
             href={listHref("/deals", {
               stage: activeStage,
+              owner: activeOwner,
               q: q ?? undefined,
               sort: raw.sort,
               dir: raw.dir,
@@ -181,6 +197,7 @@ export default async function DealsPage({
               href={listHref("/deals", {
                 stage: activeStage,
                 service: k,
+                owner: activeOwner,
                 q: q ?? undefined,
                 sort: raw.sort,
                 dir: raw.dir,
@@ -196,12 +213,36 @@ export default async function DealsPage({
             </Link>
           ))}
         </div>
-        <ListSearch
-          basePath="/deals"
-          q={rawQ}
-          placeholder="顧客名で検索…"
-          params={{ stage: activeStage, service: activeService, sort: raw.sort, dir: raw.dir }}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <ListFilterSelect
+            basePath="/deals"
+            name="owner"
+            value={activeOwner}
+            options={ownerFilterOptions(reps)}
+            allLabel="全担当者"
+            label="弊社担当者で絞り込む"
+            params={{
+              stage: activeStage,
+              service: activeService,
+              q: q ?? undefined,
+              sort: raw.sort,
+              dir: raw.dir,
+              no_trial_end: noTrialEnd,
+            }}
+          />
+          <ListSearch
+            basePath="/deals"
+            q={rawQ}
+            placeholder="顧客名で検索…"
+            params={{
+              stage: activeStage,
+              service: activeService,
+              owner: activeOwner,
+              sort: raw.sort,
+              dir: raw.dir,
+            }}
+          />
+        </div>
       </div>
 
       <Card>
@@ -228,6 +269,7 @@ export default async function DealsPage({
               <thead>
                 <tr>
                   <SortableTH label="顧客" sortKey="customer" {...sortProps} />
+                  <SortableTH label="担当" sortKey="owner" {...sortProps} />
                   <TH>サービス</TH>
                   <SortableTH label="ステージ" sortKey="stage" {...sortProps} />
                   <SortableTH
@@ -258,6 +300,9 @@ export default async function DealsPage({
                       <Link href={`/deals/${d.id}`} className="hover:underline">
                         {d.customers?.name}
                       </Link>
+                    </TD>
+                    <TD className="whitespace-nowrap text-ink-secondary">
+                      {d.customers?.owner_name ?? "—"}
                     </TD>
                     <TD>
                       <Badge variant={SERVICES[d.service].badge} dot>
