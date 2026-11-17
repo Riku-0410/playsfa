@@ -21,6 +21,7 @@ import { listReps } from "@/lib/reps";
 import { createMissingInvoice, endContract } from "./contracts/actions";
 import { markSent, registerPayment } from "./invoices/actions";
 import { saveTrialTargets } from "./actions";
+import { TrialOverdueReason } from "./trial-overdue-reason";
 
 /** KPIカードの系列。チャートと同じ固定順・固定色 */
 const SERVICE_KEYS = Object.keys(SERVICES) as (keyof typeof SERVICES)[];
@@ -187,7 +188,9 @@ export default async function DashboardPage({
         .order("due_date"),
       db
         .from("deals")
-        .select("id, trial_end, service, customers(name, owner_name)")
+        .select(
+          "id, trial_end, service, trial_overdue_reason, trial_overdue_reason_at, customers(name, owner_name)",
+        )
         .eq("stage", "trial")
         .not("trial_end", "is", null)
         .lte("trial_end", soon)
@@ -279,6 +282,8 @@ export default async function DashboardPage({
   const unpaidTotal = overdueRows.reduce((a, r) => a + r.total, 0);
   const unsentRows = upcoming.data ?? [];
   const trialRows = trials.data ?? [];
+  // 終了日を過ぎたトライアルがあるときだけ「放置理由」列を出す
+  const hasOverdueTrial = trialRows.some((r) => r.trial_end! < today);
   const noTrialEndRows = noTrialEndRes.data ?? [];
 
   // KPI: 対象月のトライアル目標達成率。キーは `${担当者}|${サービス}`(全社は担当者 = '')
@@ -717,6 +722,7 @@ export default async function DashboardPage({
                   <TH>担当</TH>
                   <TH>サービス</TH>
                   <TH>終了日</TH>
+                  {hasOverdueTrial && <TH>放置理由</TH>}
                 </tr>
               </thead>
               <tbody>
@@ -738,6 +744,17 @@ export default async function DashboardPage({
                     <TD className="font-semibold text-critical-deep">
                       {r.trial_end}
                     </TD>
+                    {hasOverdueTrial && (
+                      <TD>
+                        {r.trial_end! < today && (
+                          <TrialOverdueReason
+                            dealId={r.id}
+                            reason={r.trial_overdue_reason}
+                            writtenAt={r.trial_overdue_reason_at}
+                          />
+                        )}
+                      </TD>
+                    )}
                   </TR>
                 ))}
               </tbody>

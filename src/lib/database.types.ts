@@ -337,6 +337,8 @@ export type Database = {
           service: Database["public"]["Enums"]["service_tag"]
           stage: Database["public"]["Enums"]["deal_stage"]
           trial_end: string | null
+          trial_overdue_reason: string | null
+          trial_overdue_reason_at: string | null
           trial_planned_month: string | null
           trial_start: string | null
           updated_at: string
@@ -354,6 +356,8 @@ export type Database = {
           service: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
           trial_end?: string | null
+          trial_overdue_reason?: string | null
+          trial_overdue_reason_at?: string | null
           trial_planned_month?: string | null
           trial_start?: string | null
           updated_at?: string
@@ -371,6 +375,8 @@ export type Database = {
           service?: Database["public"]["Enums"]["service_tag"]
           stage?: Database["public"]["Enums"]["deal_stage"]
           trial_end?: string | null
+          trial_overdue_reason?: string | null
+          trial_overdue_reason_at?: string | null
           trial_planned_month?: string | null
           trial_start?: string | null
           updated_at?: string

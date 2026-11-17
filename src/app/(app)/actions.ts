@@ -72,3 +72,22 @@ export async function saveTrialTargets(formData: FormData) {
     redirect(`/?month=${returnMonth}`);
   }
 }
+
+/**
+ * トライアル終了日を過ぎても放置している理由を保存する(ダッシュボードから直接書く)。
+ * 空で保存すると理由を消す。
+ */
+export async function saveTrialOverdueReason(formData: FormData) {
+  const id = requiredStr(formData, "id");
+  const reason = str(formData, "reason");
+  const db = createAdminClient();
+  const { error } = await db
+    .from("deals")
+    .update({
+      trial_overdue_reason: reason,
+      trial_overdue_reason_at: reason ? new Date().toISOString() : null,
+    })
+    .eq("id", id);
+  if (error) throw error;
+  revalidatePath("/");
+}
